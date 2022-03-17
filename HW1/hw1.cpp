@@ -3,8 +3,10 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <fstream>
 #include <iostream>
 #include <regex>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -31,6 +33,7 @@ struct CommandRecord {
 
 void usage(const char* program_name);
 bool isnumber(const std::string& dir_name);
+std::string construct_path_name(const int& pid, const char* field);
 void find_processes(std::vector<CommandRecord>& processes,
                     const std::string& command_regex,
                     const std::string& type_filter,
@@ -104,6 +107,13 @@ bool isnumber(const std::string& dir_name) {
            std::all_of(dir_name.begin(), dir_name.end(), ::isdigit);
 }
 
+std::string construct_path_name(const int& pid, const char* field) {
+    int path_size = std::snprintf(nullptr, 0, "/proc/%d/%s", pid, field);
+    char path_name[path_size + 1];
+    std::snprintf(path_name, path_size + 1, "/proc/%d/%s", pid, field);
+    return std::string(path_name);
+}
+
 void find_processes(std::vector<CommandRecord>& processes,
                     const std::string& command_regex,
                     const std::string& type_filter,
@@ -128,8 +138,43 @@ void find_processes(std::vector<CommandRecord>& processes,
 void collect_information(std::vector<CommandRecord>& processes,
                          const std::string& command_regex,
                          const std::string& type_filter,
-                         const std::string& filename_regex, int pid) {}
+                         const std::string& filename_regex, int pid) {
+    std::ifstream ifs{};
+
+    // Open comm to find command
+    std::string path_name{construct_path_name(pid, "comm")};
+    std::string command{};
+    ifs.open(path_name);
+    if (ifs.good()) {
+        std::string full_command{};
+        std::getline(ifs, full_command);
+        std::istringstream ss(full_command);
+        ss >> command;
+        ifs.close();
+    } else {
+        ifs.close();
+        return;
+    }
+
+    // Open pwd
+
+    std::string user{};
+    std::string fd{};
+    std::string type{};
+    int node{-1};
+    std::string name{};
+
+    processes.emplace_back(command, pid, user, fd, type, node, name);
+}
 
 void print_results(const std::vector<CommandRecord>& processes) {
-    std::cout << "COMMAND\t\t\tPID\t\tUSER\t\tFD\t\tTYPE\t\tNODE\t\tNAME\n";
+    std::cout
+        << "COMMAND\t\t\t\t\tPID\t\tUSER\t\tFD\t\tTYPE\t\tNODE\t\tNAME\n";
+    for (auto& record : processes) {
+        std::cout << record.command;
+        for (size_t i = 0; i < 40 - record.command.length(); i++) std::cout << " ";
+        std::cout << record.pid << "\t\t" << record.user << "\t\t" << record.fd
+                  << "\t\t" << record.type << "\t\t" << record.node << "\t\t"
+                  << record.name << "\t\t" << std::endl;
+    }
 }
