@@ -1,4 +1,5 @@
 #include <dirent.h>
+#include <pwd.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -34,6 +35,7 @@ struct CommandRecord {
 void usage(const char* program_name);
 bool isnumber(const std::string& dir_name);
 std::string construct_path_name(const int& pid, const char* field);
+void print_spaces(const int count);
 void find_processes(std::vector<CommandRecord>& processes,
                     const std::string& command_regex,
                     const std::string& type_filter,
@@ -114,6 +116,10 @@ std::string construct_path_name(const int& pid, const char* field) {
     return std::string(path_name);
 }
 
+void print_spaces(const int count) {
+    for (int i = 0; i < count; i++) std::cout << " ";
+}
+
 void find_processes(std::vector<CommandRecord>& processes,
                     const std::string& command_regex,
                     const std::string& type_filter,
@@ -146,19 +152,36 @@ void collect_information(std::vector<CommandRecord>& processes,
     std::string command{};
     ifs.open(path_name);
     if (ifs.good()) {
-        std::string full_command{};
-        std::getline(ifs, full_command);
-        std::istringstream ss(full_command);
-        ss >> command;
+        std::getline(ifs, command);
         ifs.close();
     } else {
         ifs.close();
         return;
     }
 
-    // Open pwd
-
+    // Find matching username
     std::string user{};
+    path_name = construct_path_name(pid, "status");
+    ifs.open(path_name);
+    if (ifs.good()) {
+        // Get the line with UID
+        for (int i = 0; i < 9; i++) std::getline(ifs, user);
+        std::istringstream ss(user);
+        ss >> user;
+
+        // Extract UID
+        uid_t uid;
+        ss >> uid;
+
+        // Get username from UID
+        passwd* pws = getpwuid(uid);
+        user = pws->pw_name;
+        ifs.close();
+    } else {
+        ifs.close();
+        return;
+    }
+
     std::string fd{};
     std::string type{};
     int node{-1};
@@ -169,12 +192,15 @@ void collect_information(std::vector<CommandRecord>& processes,
 
 void print_results(const std::vector<CommandRecord>& processes) {
     std::cout
-        << "COMMAND\t\t\t\t\tPID\t\tUSER\t\tFD\t\tTYPE\t\tNODE\t\tNAME\n";
+        << "COMMAND\t\t\t\t\tPID\t\tUSER\t\t\tFD\t\tTYPE\t\tNODE\t\tNAME\n";
     for (auto& record : processes) {
         std::cout << record.command;
-        for (size_t i = 0; i < 40 - record.command.length(); i++) std::cout << " ";
-        std::cout << record.pid << "\t\t" << record.user << "\t\t" << record.fd
-                  << "\t\t" << record.type << "\t\t" << record.node << "\t\t"
-                  << record.name << "\t\t" << std::endl;
+        print_spaces(40 - record.command.length());
+
+        std::cout << record.pid << "\t\t" << record.user;
+        print_spaces(24 - record.user.length());
+        
+        std::cout << 1 << "\t\t" << record.type << "\t\t" << record.node
+                  << "\t\t" << record.name << "\t\t" << std::endl;
     }
 }
