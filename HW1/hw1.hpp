@@ -11,6 +11,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <unordered_set>
 
 struct CommandRecord {
     std::string command{};
@@ -87,6 +88,11 @@ bool find_txt(const int& pid, const std::string& command,
               const std::string& user,
               std::vector<CommandRecord>& temp_processes,
               const std::string& type_filter);
+
+// Find memory mapping information
+bool find_mem_del(const int& pid, const std::string& command,
+                  const std::string& user,
+                  std::vector<CommandRecord>& temp_processes);
 
 // Print information of all running processes
 void print_results(const std::vector<CommandRecord>& processes);

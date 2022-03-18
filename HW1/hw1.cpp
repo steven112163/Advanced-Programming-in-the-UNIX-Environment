@@ -128,6 +128,10 @@ void collect_information(std::vector<CommandRecord>& processes,
     // Find program file
     if (!find_txt(pid, command, user, temp_processes, type_filter)) return;
 
+    // Find memory mapping information
+    if (type_filter.length() == 0 or type_filter == "REG")
+        if (!find_mem_del(pid, command, user, temp_processes)) return;
+
     processes.insert(processes.end(), temp_processes.begin(),
                      temp_processes.end());
 }
@@ -249,10 +253,64 @@ bool find_txt(const int& pid, const std::string& command,
                             type_filter);
 }
 
+// Find memory mapping information
+bool find_mem_del(const int& pid, const std::string& command,
+                  const std::string& user,
+                  std::vector<CommandRecord>& temp_processes) {
+    // Open maps to find memory mapping information
+    std::ifstream ifs{};
+    std::string path_name{construct_path_name(pid, "maps")};
+    std::vector<CommandRecord> mem_processes{};
+
+    std::string line{}, info{};
+    std::unordered_set<std::string> mem_records{};
+    std::unordered_set<std::string> del_records{};
+
+    int node{};
+    std::string filename{};
+
+    ifs.open(path_name);
+    while (ifs.good() && !ifs.eof()) {
+        std::getline(ifs, line);
+        std::istringstream ss(line);
+
+        // Dump dummy info
+        for (int i = 0; i < 4; i++) ss >> info;
+
+        // Capture i-node and filename
+        ss >> node;
+        if (node == 0) continue;
+        ss >> filename;
+
+        // Check whether the filename is a new one
+        if (ss.eof()) {
+            auto got = mem_records.find(filename);
+            if (got != mem_records.end()) continue;
+            mem_processes.emplace_back(command, pid, user, "mem", "REG", node,
+                                       filename);
+            mem_records.insert(filename);
+        } else {
+            auto got = del_records.find(filename);
+            if (got != del_records.end()) continue;
+            mem_processes.emplace_back(command, pid, user, "DEL", "REG", node,
+                                       filename);
+            del_records.insert(filename);
+        }
+    }
+    if (ifs.bad()) {
+        ifs.close();
+        return false;
+    }
+    ifs.close();
+
+    temp_processes.insert(temp_processes.end(), mem_processes.begin(),
+                          mem_processes.end());
+    return true;
+}
+
 // Print information of all running processes
 void print_results(const std::vector<CommandRecord>& processes) {
-    std::cout
-        << "COMMAND\t\t\t\t\tPID\t\tUSER\t\t\tFD\tTYPE\t\tNODE\t\tNAME\n";
+    std::cout << "COMMAND\t\t\t\t\tPID\t\tUSER\t\t\tFD\tTYPE\t\tNODE\t\tNAME\n";
     for (auto& record : processes) {
         std::cout << record.command;
         print_spaces(40 - record.command.length());
