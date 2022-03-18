@@ -1,56 +1,4 @@
-#include <dirent.h>
-#include <pwd.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
-
-#include <algorithm>
-#include <fstream>
-#include <iostream>
-#include <regex>
-#include <sstream>
-#include <string>
-#include <vector>
-
-struct CommandRecord {
-    std::string command{};
-    int pid{};
-    std::string user{};
-    std::string fd{};
-    std::string type{};
-    int node{-1};
-    std::string name{};
-
-    CommandRecord(std::string _command, int _pid, std::string _user,
-                  std::string _fd, std::string _type, int _node,
-                  std::string _name)
-        : command(_command),
-          pid(_pid),
-          user(_user),
-          fd(_fd),
-          type(_type),
-          node(_node),
-          name(_name) {}
-};
-
-void usage(const char* program_name);
-bool isnumber(const std::string& dir_name);
-std::string construct_path_name(const int& pid, const char* field);
-void print_spaces(const int count);
-void find_processes(std::vector<CommandRecord>& processes,
-                    const std::regex& command_regex,
-                    const std::string& type_filter,
-                    const std::regex& filename_regex);
-void collect_information(std::vector<CommandRecord>& processes,
-                         const std::regex& command_regex,
-                         const std::string& type_filter,
-                         const std::regex& filename_regex, const int& pid);
-std::string find_command(const int& pid);
-std::string find_username(const int& pid);
-bool find_cwd(const int& pid, const std::string& command,
-              const std::string& user,
-              std::vector<CommandRecord>& temp_processes);
-void print_results(const std::vector<CommandRecord>& processes);
+#include "hw1.hpp"
 
 int main(int argc, char** argv) {
     std::regex command_regex{".*"};
@@ -100,6 +48,7 @@ int main(int argc, char** argv) {
     return 0;
 }
 
+// Program usage message
 void usage(const char* program_name) {
     std::cout
         << "Usage: " << program_name << " [options]\n"
@@ -112,11 +61,13 @@ void usage(const char* program_name) {
         << "  -h        This message" << std::endl;
 }
 
+// Check whether the directory name only contains digits
 bool isnumber(const std::string& dir_name) {
     return !dir_name.empty() &&
            std::all_of(dir_name.begin(), dir_name.end(), ::isdigit);
 }
 
+// Construct path name /proc/<pid>/<field>
 std::string construct_path_name(const int& pid, const char* field) {
     int path_size = std::snprintf(nullptr, 0, "/proc/%d/%s", pid, field);
     char path_name[path_size + 1];
@@ -124,10 +75,12 @@ std::string construct_path_name(const int& pid, const char* field) {
     return std::string(path_name);
 }
 
+// Print spaces in the results for formatting
 void print_spaces(const int count) {
     for (int i = 0; i < count; i++) std::cout << " ";
 }
 
+// Find all processes in /proc
 void find_processes(std::vector<CommandRecord>& processes,
                     const std::regex& command_regex,
                     const std::string& type_filter,
@@ -149,6 +102,7 @@ void find_processes(std::vector<CommandRecord>& processes,
     closedir(directory);
 }
 
+// Collect information of each process in the /proc
 void collect_information(std::vector<CommandRecord>& processes,
                          const std::regex& command_regex,
                          const std::string& type_filter,
@@ -166,12 +120,19 @@ void collect_information(std::vector<CommandRecord>& processes,
     if (user.length() == 0) return;
 
     // Find current working directory
-    if (!find_cwd(pid, command, user, temp_processes)) return;
+    if (!find_cwd(pid, command, user, temp_processes, type_filter)) return;
+
+    // Find root directory
+    if (!find_rtd(pid, command, user, temp_processes, type_filter)) return;
+
+    // Find program file
+    if (!find_txt(pid, command, user, temp_processes, type_filter)) return;
 
     processes.insert(processes.end(), temp_processes.begin(),
                      temp_processes.end());
 }
 
+// Find the executable filename of the running process
 std::string find_command(const int& pid) {
     // Open comm to find command
     std::ifstream ifs{};
@@ -185,10 +146,11 @@ std::string find_command(const int& pid) {
     return command;
 }
 
+// Find the username who runs the process
 std::string find_username(const int& pid) {
     // Open status to find UID for username
     std::ifstream ifs{};
-    std::string path_name = construct_path_name(pid, "status");
+    std::string path_name{construct_path_name(pid, "status")};
     std::string username{};
 
     ifs.open(path_name);
@@ -212,12 +174,19 @@ std::string find_username(const int& pid) {
     return username;
 }
 
-bool find_cwd(const int& pid, const std::string& command,
-              const std::string& user,
-              std::vector<CommandRecord>& temp_processes) {
-    // Read cwd to find current working directory
-    std::string path_name = construct_path_name(pid, "cwd");
-    std::string fd{"cwd"};
+// Resolve symbolic link for current working directory, root directory, and
+// program file
+bool resolve_sym_link(const int& pid, const char* filename,
+                      const std::string& command, const std::string& user,
+                      std::vector<CommandRecord>& temp_processes,
+                      const std::string& type_filter) {
+    // Read filename to resolve the symbolic link
+    std::string path_name{construct_path_name(pid, filename)};
+    std::string fd{filename};
+    if (fd == "root")
+        fd = "rtd";
+    else if (fd == "exe")
+        fd = "txt";
     std::string type{"unknown"};
     int node{-1};
     std::string name{path_name + " (Permission denied)"};
@@ -225,10 +194,11 @@ bool find_cwd(const int& pid, const std::string& command,
     char buf[1000];
     ssize_t size;
     if ((size = readlink(path_name.c_str(), buf, 1000)) == -1) {
-        if (errno == EACCES)
-            temp_processes.emplace_back(command, pid, user, fd, type, node,
-                                        name);
-        else
+        if (errno == EACCES) {
+            if (type_filter.length() == 0 or type_filter == type)
+                temp_processes.emplace_back(command, pid, user, fd, type, node,
+                                            name);
+        } else
             return false;
     } else {
         struct stat stat_buf;
@@ -237,19 +207,52 @@ bool find_cwd(const int& pid, const std::string& command,
             return false;
         }
 
-        type = "DIR";
+        if (fd == "txt")
+            type = "REG";
+        else
+            type = "DIR";
         buf[size] = '\0';
         name = buf;
         node = stat_buf.st_ino;
-        temp_processes.emplace_back(command, pid, user, fd, type, node, name);
+        if (type_filter.length() == 0 or type_filter == type)
+            temp_processes.emplace_back(command, pid, user, fd, type, node,
+                                        name);
     }
 
     return true;
 }
 
+// Find current working directory using function "resolve_sym_link"
+bool find_cwd(const int& pid, const std::string& command,
+              const std::string& user,
+              std::vector<CommandRecord>& temp_processes,
+              const std::string& type_filter) {
+    return resolve_sym_link(pid, "cwd", command, user, temp_processes,
+                            type_filter);
+}
+
+// Find root directory using function "resolve_sym_link"
+bool find_rtd(const int& pid, const std::string& command,
+              const std::string& user,
+              std::vector<CommandRecord>& temp_processes,
+              const std::string& type_filter) {
+    return resolve_sym_link(pid, "root", command, user, temp_processes,
+                            type_filter);
+}
+
+// Find program file using function "resolve_sym_link"
+bool find_txt(const int& pid, const std::string& command,
+              const std::string& user,
+              std::vector<CommandRecord>& temp_processes,
+              const std::string& type_filter) {
+    return resolve_sym_link(pid, "exe", command, user, temp_processes,
+                            type_filter);
+}
+
+// Print information of all running processes
 void print_results(const std::vector<CommandRecord>& processes) {
     std::cout
-        << "COMMAND\t\t\t\t\tPID\t\tUSER\t\t\tFD\t\tTYPE\t\tNODE\t\tNAME\n";
+        << "COMMAND\t\t\t\t\tPID\t\tUSER\t\t\tFD\tTYPE\t\tNODE\t\tNAME\n";
     for (auto& record : processes) {
         std::cout << record.command;
         print_spaces(40 - record.command.length());
@@ -257,10 +260,14 @@ void print_results(const std::vector<CommandRecord>& processes) {
         std::cout << record.pid << "\t\t" << record.user;
         print_spaces(24 - record.user.length());
 
-        std::cout << 1 << "\t\t" << record.type << "\t\t";
+        std::cout << record.fd << "\t" << record.type << "\t\t";
 
-        if (record.node != -1) std::cout << record.node;
-        print_spaces(16 - std::to_string(record.node).length());
+        if (record.node != -1) {
+            std::cout << record.node;
+            print_spaces(16 - std::to_string(record.node).length());
+        } else {
+            print_spaces(16);
+        }
 
         std::cout << record.name << "\t\t" << std::endl;
     }
