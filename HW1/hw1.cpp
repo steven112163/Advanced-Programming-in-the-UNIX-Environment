@@ -1,5 +1,6 @@
 #include <dirent.h>
 #include <pwd.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -46,6 +47,9 @@ void collect_information(std::vector<CommandRecord>& processes,
                          const std::regex& filename_regex, const int& pid);
 std::string find_command(const int& pid);
 std::string find_username(const int& pid);
+bool find_cwd(const int& pid, const std::string& command,
+              const std::string& user,
+              std::vector<CommandRecord>& temp_processes);
 void print_results(const std::vector<CommandRecord>& processes);
 
 int main(int argc, char** argv) {
@@ -149,6 +153,9 @@ void collect_information(std::vector<CommandRecord>& processes,
                          const std::regex& command_regex,
                          const std::string& type_filter,
                          const std::regex& filename_regex, const int& pid) {
+    // Temporary storage
+    std::vector<CommandRecord> temp_processes{};
+
     // Find command
     std::string command{find_command(pid)};
     if (command.length() == 0 or !std::regex_match(command, command_regex))
@@ -158,12 +165,11 @@ void collect_information(std::vector<CommandRecord>& processes,
     std::string user{find_username(pid)};
     if (user.length() == 0) return;
 
-    std::string fd{};
-    std::string type{};
-    int node{-1};
-    std::string name{};
+    // Find current working directory
+    if (!find_cwd(pid, command, user, temp_processes)) return;
 
-    processes.emplace_back(command, pid, user, fd, type, node, name);
+    processes.insert(processes.end(), temp_processes.begin(),
+                     temp_processes.end());
 }
 
 std::string find_command(const int& pid) {
@@ -206,6 +212,41 @@ std::string find_username(const int& pid) {
     return username;
 }
 
+bool find_cwd(const int& pid, const std::string& command,
+              const std::string& user,
+              std::vector<CommandRecord>& temp_processes) {
+    // Read cwd to find current working directory
+    std::string path_name = construct_path_name(pid, "cwd");
+    std::string fd{"cwd"};
+    std::string type{"unknown"};
+    int node{-1};
+    std::string name{path_name + " (Permission denied)"};
+
+    char buf[1000];
+    ssize_t size;
+    if ((size = readlink(path_name.c_str(), buf, 1000)) == -1) {
+        if (errno == EACCES)
+            temp_processes.emplace_back(command, pid, user, fd, type, node,
+                                        name);
+        else
+            return false;
+    } else {
+        struct stat stat_buf;
+        if (stat(path_name.c_str(), &stat_buf) == -1) {
+            std::cout << errno << std::endl;
+            return false;
+        }
+
+        type = "DIR";
+        buf[size] = '\0';
+        name = buf;
+        node = stat_buf.st_ino;
+        temp_processes.emplace_back(command, pid, user, fd, type, node, name);
+    }
+
+    return true;
+}
+
 void print_results(const std::vector<CommandRecord>& processes) {
     std::cout
         << "COMMAND\t\t\t\t\tPID\t\tUSER\t\t\tFD\t\tTYPE\t\tNODE\t\tNAME\n";
@@ -216,7 +257,11 @@ void print_results(const std::vector<CommandRecord>& processes) {
         std::cout << record.pid << "\t\t" << record.user;
         print_spaces(24 - record.user.length());
 
-        std::cout << 1 << "\t\t" << record.type << "\t\t" << record.node
-                  << "\t\t" << record.name << "\t\t" << std::endl;
+        std::cout << 1 << "\t\t" << record.type << "\t\t";
+
+        if (record.node != -1) std::cout << record.node;
+        print_spaces(16 - std::to_string(record.node).length());
+
+        std::cout << record.name << "\t\t" << std::endl;
     }
 }
