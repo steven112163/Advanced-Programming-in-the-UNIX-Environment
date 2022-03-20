@@ -10,8 +10,8 @@
 #include <regex>
 #include <sstream>
 #include <string>
-#include <vector>
 #include <unordered_set>
+#include <vector>
 
 struct CommandRecord {
     std::string command{};
@@ -72,30 +72,33 @@ std::string resolve_file_type(const struct stat& stat_buf);
 bool resolve_sym_link(const int& pid, const char* filename,
                       const std::string& command, const std::string& user,
                       std::vector<CommandRecord>& temp_processes,
-                      const std::string& type_filter);
+                      const std::string& type_filter,
+                      const std::regex& filename_regex);
 
 // Find current working directory using function "resolve_sym_link"
 bool find_cwd(const int& pid, const std::string& command,
               const std::string& user,
               std::vector<CommandRecord>& temp_processes,
-              const std::string& type_filter);
+              const std::string& type_filter, const std::regex& filename_regex);
 
 // Find root directory using function "resolve_sym_link"
 bool find_rtd(const int& pid, const std::string& command,
               const std::string& user,
               std::vector<CommandRecord>& temp_processes,
-              const std::string& type_filter);
+              const std::string& type_filter, const std::regex& filename_regex);
 
 // Find program file using function "resolve_sym_link"
 bool find_txt(const int& pid, const std::string& command,
               const std::string& user,
               std::vector<CommandRecord>& temp_processes,
-              const std::string& type_filter);
+              const std::string& type_filter, const std::regex& filename_regex);
 
 // Find memory mapping information
 bool find_mem_del(const int& pid, const std::string& command,
                   const std::string& user,
-                  std::vector<CommandRecord>& temp_processes);
+                  std::vector<CommandRecord>& temp_processes,
+                  const std::string& type_filter,
+                  const std::regex& filename_regex);
 
 // Print information of all running processes
 void print_results(const std::vector<CommandRecord>& processes);

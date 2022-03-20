@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
                     type_filter = optarg;
                     break;
                 } else {
-                    std::cerr << "Invalid TYPE option" << std::endl;
+                    std::cerr << "Invalid TYPE option." << std::endl;
                     exit(EXIT_FAILURE);
                 }
             }
@@ -120,17 +120,24 @@ void collect_information(std::vector<CommandRecord>& processes,
     if (user.length() == 0) return;
 
     // Find current working directory
-    if (!find_cwd(pid, command, user, temp_processes, type_filter)) return;
+    if (!find_cwd(pid, command, user, temp_processes, type_filter,
+                  filename_regex))
+        return;
 
     // Find root directory
-    if (!find_rtd(pid, command, user, temp_processes, type_filter)) return;
+    if (!find_rtd(pid, command, user, temp_processes, type_filter,
+                  filename_regex))
+        return;
 
     // Find program file
-    if (!find_txt(pid, command, user, temp_processes, type_filter)) return;
+    if (!find_txt(pid, command, user, temp_processes, type_filter,
+                  filename_regex))
+        return;
 
     // Find memory mapping information
-    if (type_filter.length() == 0 or type_filter == "REG")
-        if (!find_mem_del(pid, command, user, temp_processes)) return;
+    if (!find_mem_del(pid, command, user, temp_processes, type_filter,
+                      filename_regex))
+        return;
 
     processes.insert(processes.end(), temp_processes.begin(),
                      temp_processes.end());
@@ -207,7 +214,8 @@ std::string resolve_file_type(const struct stat& stat_buf) {
 bool resolve_sym_link(const int& pid, const char* filename,
                       const std::string& command, const std::string& user,
                       std::vector<CommandRecord>& temp_processes,
-                      const std::string& type_filter) {
+                      const std::string& type_filter,
+                      const std::regex& filename_regex) {
     // Read filename to resolve the symbolic link
     std::string path_name{construct_path_name(pid, filename)};
 
@@ -225,7 +233,8 @@ bool resolve_sym_link(const int& pid, const char* filename,
     if ((size = readlink(path_name.c_str(), buf, 1000)) == -1) {
         if (errno == EACCES) {
             // Append a "permission denied" entry
-            if (type_filter.length() == 0 or type_filter == type)
+            if ((type_filter.length() == 0 or type_filter == type) and
+                std::regex_match(name, filename_regex))
                 temp_processes.emplace_back(command, pid, user, fd, type, node,
                                             name);
         } else {
@@ -243,7 +252,8 @@ bool resolve_sym_link(const int& pid, const char* filename,
         node = stat_buf.st_ino;
         buf[size] = '\0';
         name = buf;
-        if (type_filter.length() == 0 or type_filter == type)
+        if ((type_filter.length() == 0 or type_filter == type) and
+            std::regex_match(name, filename_regex))
             temp_processes.emplace_back(command, pid, user, fd, type, node,
                                         name);
     }
@@ -255,33 +265,38 @@ bool resolve_sym_link(const int& pid, const char* filename,
 bool find_cwd(const int& pid, const std::string& command,
               const std::string& user,
               std::vector<CommandRecord>& temp_processes,
-              const std::string& type_filter) {
+              const std::string& type_filter,
+              const std::regex& filename_regex) {
     return resolve_sym_link(pid, "cwd", command, user, temp_processes,
-                            type_filter);
+                            type_filter, filename_regex);
 }
 
 // Find root directory using function "resolve_sym_link"
 bool find_rtd(const int& pid, const std::string& command,
               const std::string& user,
               std::vector<CommandRecord>& temp_processes,
-              const std::string& type_filter) {
+              const std::string& type_filter,
+              const std::regex& filename_regex) {
     return resolve_sym_link(pid, "root", command, user, temp_processes,
-                            type_filter);
+                            type_filter, filename_regex);
 }
 
 // Find program file using function "resolve_sym_link"
 bool find_txt(const int& pid, const std::string& command,
               const std::string& user,
               std::vector<CommandRecord>& temp_processes,
-              const std::string& type_filter) {
+              const std::string& type_filter,
+              const std::regex& filename_regex) {
     return resolve_sym_link(pid, "exe", command, user, temp_processes,
-                            type_filter);
+                            type_filter, filename_regex);
 }
 
 // Find memory mapping information
 bool find_mem_del(const int& pid, const std::string& command,
                   const std::string& user,
-                  std::vector<CommandRecord>& temp_processes) {
+                  std::vector<CommandRecord>& temp_processes,
+                  const std::string& type_filter,
+                  const std::regex& filename_regex) {
     // Open maps to find memory mapping information
     std::ifstream ifs{};
     std::string path_name{construct_path_name(pid, "maps")};
@@ -318,8 +333,11 @@ bool find_mem_del(const int& pid, const std::string& command,
                 continue;
             }
 
-            mem_processes.emplace_back(command, pid, user, "mem", resolve_file_type(stat_buf), node,
-                                       filename);
+            std::string type = resolve_file_type(stat_buf);
+            if ((type_filter.length() == 0 or type_filter == type) and
+                std::regex_match(filename, filename_regex))
+                mem_processes.emplace_back(command, pid, user, "mem", type,
+                                           node, filename);
             mem_records.insert(filename);
         } else {
             auto got = del_records.find(filename);
@@ -331,14 +349,20 @@ bool find_mem_del(const int& pid, const std::string& command,
                 continue;
             }
 
-            mem_processes.emplace_back(command, pid, user, "DEL", resolve_file_type(stat_buf), node,
-                                       filename);
+            std::string type = resolve_file_type(stat_buf);
+            if ((type_filter.length() == 0 or type_filter == type) and
+                std::regex_match(filename, filename_regex))
+                mem_processes.emplace_back(command, pid, user, "DEL", type,
+                                           node, filename);
             del_records.insert(filename);
         }
     }
     if (ifs.fail() && !ifs.eof()) {
-        // Append nothing if access denied etc.
+        // Append nothing if access denied, otherwise
+        // return false if the process stops running
         ifs.close();
+        if (errno == EACCES)
+            return true;
         return false;
     }
     ifs.close();
