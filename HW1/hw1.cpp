@@ -178,6 +178,30 @@ std::string find_username(const int& pid) {
     return username;
 }
 
+// Resolve file type
+std::string resolve_file_type(const struct stat& stat_buf) {
+    switch (stat_buf.st_mode & S_IFMT) {
+        case S_IFDIR: {
+            return "DIR";
+        }
+        case S_IFREG: {
+            return "REG";
+        }
+        case S_IFCHR: {
+            return "CHR";
+        }
+        case S_IFIFO: {
+            return "FIFO";
+        }
+        case S_IFSOCK: {
+            return "SOCK";
+        }
+        default: {
+            return "unknown";
+        }
+    }
+}
+
 // Resolve symbolic link for current working directory, root directory, and
 // program file
 bool resolve_sym_link(const int& pid, const char* filename,
@@ -186,6 +210,7 @@ bool resolve_sym_link(const int& pid, const char* filename,
                       const std::string& type_filter) {
     // Read filename to resolve the symbolic link
     std::string path_name{construct_path_name(pid, filename)};
+
     std::string fd{filename};
     if (fd == "root")
         fd = "rtd";
@@ -199,25 +224,25 @@ bool resolve_sym_link(const int& pid, const char* filename,
     ssize_t size;
     if ((size = readlink(path_name.c_str(), buf, 1000)) == -1) {
         if (errno == EACCES) {
+            // Append a "permission denied" entry
             if (type_filter.length() == 0 or type_filter == type)
                 temp_processes.emplace_back(command, pid, user, fd, type, node,
                                             name);
-        } else
+        } else {
+            // Append nothing if the process stops running etc.
             return false;
+        }
     } else {
         struct stat stat_buf;
         if (stat(path_name.c_str(), &stat_buf) == -1) {
-            std::cout << errno << std::endl;
+            // Append nothing if the process stops running etc.
             return false;
         }
 
-        if (fd == "txt")
-            type = "REG";
-        else
-            type = "DIR";
+        type = resolve_file_type(stat_buf);
+        node = stat_buf.st_ino;
         buf[size] = '\0';
         name = buf;
-        node = stat_buf.st_ino;
         if (type_filter.length() == 0 or type_filter == type)
             temp_processes.emplace_back(command, pid, user, fd, type, node,
                                         name);
@@ -286,18 +311,33 @@ bool find_mem_del(const int& pid, const std::string& command,
         if (ss.eof()) {
             auto got = mem_records.find(filename);
             if (got != mem_records.end()) continue;
-            mem_processes.emplace_back(command, pid, user, "mem", "REG", node,
+
+            struct stat stat_buf;
+            if (stat(path_name.c_str(), &stat_buf) == -1) {
+                // Append nothing if the process stops running etc.
+                continue;
+            }
+
+            mem_processes.emplace_back(command, pid, user, "mem", resolve_file_type(stat_buf), node,
                                        filename);
             mem_records.insert(filename);
         } else {
             auto got = del_records.find(filename);
             if (got != del_records.end()) continue;
-            mem_processes.emplace_back(command, pid, user, "DEL", "REG", node,
+
+            struct stat stat_buf;
+            if (stat(path_name.c_str(), &stat_buf) == -1) {
+                // Append nothing if the process stops running etc.
+                continue;
+            }
+
+            mem_processes.emplace_back(command, pid, user, "DEL", resolve_file_type(stat_buf), node,
                                        filename);
             del_records.insert(filename);
         }
     }
-    if (ifs.bad()) {
+    if (ifs.fail() && !ifs.eof()) {
+        // Append nothing if access denied etc.
         ifs.close();
         return false;
     }

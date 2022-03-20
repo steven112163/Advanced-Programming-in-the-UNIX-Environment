@@ -64,6 +64,9 @@ std::string find_command(const int& pid);
 // Find the username who runs the process
 std::string find_username(const int& pid);
 
+// Resolve file type
+std::string resolve_file_type(const struct stat& stat_buf);
+
 // Resolve symbolic link for current working directory, root directory, and
 // program file
 bool resolve_sym_link(const int& pid, const char* filename,
