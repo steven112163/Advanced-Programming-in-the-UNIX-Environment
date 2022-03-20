@@ -67,14 +67,6 @@ bool isnumber(const std::string& dir_name) {
            std::all_of(dir_name.begin(), dir_name.end(), ::isdigit);
 }
 
-// Construct path name /proc/<pid>/<field>
-std::string construct_path_name(const int& pid, const char* field) {
-    int path_size = std::snprintf(nullptr, 0, "/proc/%d/%s", pid, field);
-    char path_name[path_size + 1];
-    std::snprintf(path_name, path_size + 1, "/proc/%d/%s", pid, field);
-    return std::string(path_name);
-}
-
 // Print spaces in the results for formatting
 void print_spaces(const int count) {
     for (int i = 0; i < count; i++) std::cout << " ";
@@ -88,8 +80,7 @@ void find_processes(std::vector<CommandRecord>& processes,
     // Open /proc directory
     DIR* directory{};
     if (!(directory = opendir("/proc"))) {
-        std::cerr << "Couldn't open /proc, error number: " << errno
-                  << std::endl;
+        perror("Couldn't open /proc, error: ");
         exit(EXIT_FAILURE);
     }
 
@@ -135,8 +126,13 @@ void collect_information(std::vector<CommandRecord>& processes,
         return;
 
     // Find memory mapping information
-    if (!find_mem_del(pid, command, user, temp_processes, type_filter,
-                      filename_regex))
+    if (type_filter.length() == 0 or type_filter == "REG")
+        if (!find_mem_del(pid, command, user, temp_processes, filename_regex))
+            return;
+
+    // Find file descriptors
+    if (!find_file_descriptors(pid, command, user, temp_processes, type_filter,
+                               filename_regex))
         return;
 
     processes.insert(processes.end(), temp_processes.begin(),
@@ -147,7 +143,7 @@ void collect_information(std::vector<CommandRecord>& processes,
 std::string find_command(const int& pid) {
     // Open comm to find command
     std::ifstream ifs{};
-    std::string path_name{construct_path_name(pid, "comm")};
+    std::string path_name{"/proc/" + std::to_string(pid) + "/comm"};
     std::string command{};
 
     ifs.open(path_name);
@@ -161,7 +157,7 @@ std::string find_command(const int& pid) {
 std::string find_username(const int& pid) {
     // Open status to find UID for username
     std::ifstream ifs{};
-    std::string path_name{construct_path_name(pid, "status")};
+    std::string path_name{"/proc/" + std::to_string(pid) + "/status"};
     std::string username{};
 
     ifs.open(path_name);
@@ -185,7 +181,7 @@ std::string find_username(const int& pid) {
     return username;
 }
 
-// Resolve file type
+// Resolve file type from state
 std::string resolve_file_type(const struct stat& stat_buf) {
     switch (stat_buf.st_mode & S_IFMT) {
         case S_IFDIR: {
@@ -217,7 +213,7 @@ bool resolve_sym_link(const int& pid, const char* filename,
                       const std::string& type_filter,
                       const std::regex& filename_regex) {
     // Read filename to resolve the symbolic link
-    std::string path_name{construct_path_name(pid, filename)};
+    std::string path_name{"/proc/" + std::to_string(pid) + "/" + filename};
 
     std::string fd{filename};
     if (fd == "root")
@@ -229,7 +225,7 @@ bool resolve_sym_link(const int& pid, const char* filename,
     std::string name{path_name + " (Permission denied)"};
 
     char buf[1000];
-    ssize_t size;
+    ssize_t size{};
     if ((size = readlink(path_name.c_str(), buf, 1000)) == -1) {
         if (errno == EACCES) {
             // Append a "permission denied" entry
@@ -242,7 +238,7 @@ bool resolve_sym_link(const int& pid, const char* filename,
             return false;
         }
     } else {
-        struct stat stat_buf;
+        struct stat stat_buf{};
         if (stat(path_name.c_str(), &stat_buf) == -1) {
             // Append nothing if the process stops running etc.
             return false;
@@ -295,11 +291,10 @@ bool find_txt(const int& pid, const std::string& command,
 bool find_mem_del(const int& pid, const std::string& command,
                   const std::string& user,
                   std::vector<CommandRecord>& temp_processes,
-                  const std::string& type_filter,
                   const std::regex& filename_regex) {
     // Open maps to find memory mapping information
     std::ifstream ifs{};
-    std::string path_name{construct_path_name(pid, "maps")};
+    std::string path_name{"/proc/" + std::to_string(pid) + "/maps"};
     std::vector<CommandRecord> mem_processes{};
 
     std::string line{}, info{};
@@ -324,51 +319,100 @@ bool find_mem_del(const int& pid, const std::string& command,
 
         // Check whether the filename is a new one
         if (ss.eof()) {
+            // MEM
             auto got = mem_records.find(filename);
             if (got != mem_records.end()) continue;
-
-            struct stat stat_buf;
-            if (stat(path_name.c_str(), &stat_buf) == -1) {
-                // Append nothing if the process stops running etc.
-                continue;
-            }
-
-            std::string type = resolve_file_type(stat_buf);
-            if ((type_filter.length() == 0 or type_filter == type) and
-                std::regex_match(filename, filename_regex))
-                mem_processes.emplace_back(command, pid, user, "mem", type,
-                                           node, filename);
             mem_records.insert(filename);
+
+            if (std::regex_match(filename, filename_regex))
+                mem_processes.emplace_back(command, pid, user, "mem", "REG",
+                                           node, filename);
         } else {
+            // DEL
             auto got = del_records.find(filename);
             if (got != del_records.end()) continue;
-
-            struct stat stat_buf;
-            if (stat(path_name.c_str(), &stat_buf) == -1) {
-                // Append nothing if the process stops running etc.
-                continue;
-            }
-
-            std::string type = resolve_file_type(stat_buf);
-            if ((type_filter.length() == 0 or type_filter == type) and
-                std::regex_match(filename, filename_regex))
-                mem_processes.emplace_back(command, pid, user, "DEL", type,
-                                           node, filename);
             del_records.insert(filename);
+
+            if (std::regex_match(filename, filename_regex))
+                mem_processes.emplace_back(command, pid, user, "DEL", "REG",
+                                           node, filename);
         }
     }
     if (ifs.fail() && !ifs.eof()) {
         // Append nothing if access denied, otherwise
         // return false if the process stops running
         ifs.close();
-        if (errno == EACCES)
-            return true;
+        if (errno == EACCES) return true;
         return false;
     }
     ifs.close();
 
     temp_processes.insert(temp_processes.end(), mem_processes.begin(),
                           mem_processes.end());
+    return true;
+}
+
+// Find all file descriptors in /proc/fd
+bool find_file_descriptors(const int& pid, const std::string& command,
+                           const std::string& user,
+                           std::vector<CommandRecord>& temp_processes,
+                           const std::string& type_filter,
+                           const std::regex& filename_regex) {
+    // Open /proc/<pid>/fd directory
+    DIR* directory{};
+    std::string path_name{"/proc/" + std::to_string(pid) + "/fd"};
+    if (!(directory = opendir(path_name.c_str()))) {
+        if (errno != EACCES) {
+            perror("Open dir: ");
+            return false;
+        }
+        if ((type_filter.length() == 0 or type_filter == "unknown") and
+            std::regex_match(path_name, filename_regex))
+            temp_processes.emplace_back(command, pid, user, "NOFD", "unknown",
+                                        -1, path_name + " (Permission denied)");
+        return true;
+    }
+
+    std::string type{}, name{};
+    int node{};
+
+    // Iterate all file descriptors
+    dirent* dir_info{};
+    char buf[1000];
+    ssize_t size{};
+    struct stat stat_buf {};
+    while ((dir_info = readdir(directory))) {
+        if (!isnumber(dir_info->d_name)) continue;
+
+        // Resolve to which file the file descriptor points
+        name = path_name + "/" + dir_info->d_name;
+        if ((size = readlink(name.c_str(), buf, 1000)) == -1) {
+            closedir(directory);
+            return false;
+        }
+
+        // Get state of the file descriptor
+        if (stat(name.c_str(), &stat_buf) == -1) {
+            closedir(directory);
+            return false;
+        }
+
+        type = resolve_file_type(stat_buf);
+        if (type_filter.length() != 0 and type_filter != type) continue;
+
+        node = stat_buf.st_ino;
+
+        buf[size] = '\0';
+        name = buf;
+        std::istringstream ss(name);
+        ss >> name;
+        if (!std::regex_match(name, filename_regex)) continue;
+
+        temp_processes.emplace_back(command, pid, user, dir_info->d_name, type,
+                                    node, name);
+    }
+    closedir(directory);
+
     return true;
 }
 

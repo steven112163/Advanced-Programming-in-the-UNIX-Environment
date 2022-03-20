@@ -40,9 +40,6 @@ void usage(const char* program_name);
 // Check whether the directory name only contains digits
 bool isnumber(const std::string& dir_name);
 
-// Construct path name /proc/<pid>/<field>
-std::string construct_path_name(const int& pid, const char* field);
-
 // Print spaces in the results for formatting
 void print_spaces(const int count);
 
@@ -64,7 +61,7 @@ std::string find_command(const int& pid);
 // Find the username who runs the process
 std::string find_username(const int& pid);
 
-// Resolve file type
+// Resolve file type from state
 std::string resolve_file_type(const struct stat& stat_buf);
 
 // Resolve symbolic link for current working directory, root directory, and
@@ -97,8 +94,14 @@ bool find_txt(const int& pid, const std::string& command,
 bool find_mem_del(const int& pid, const std::string& command,
                   const std::string& user,
                   std::vector<CommandRecord>& temp_processes,
-                  const std::string& type_filter,
                   const std::regex& filename_regex);
+
+// Find all file descriptors in /proc/fd
+bool find_file_descriptors(const int& pid, const std::string& command,
+                           const std::string& user,
+                           std::vector<CommandRecord>& temp_processes,
+                           const std::string& type_filter,
+                           const std::regex& filename_regex);
 
 // Print information of all running processes
 void print_results(const std::vector<CommandRecord>& processes);
