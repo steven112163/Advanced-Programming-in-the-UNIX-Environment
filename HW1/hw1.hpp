@@ -3,6 +3,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #include <algorithm>
 #include <fstream>
@@ -19,17 +20,19 @@ struct CommandRecord {
     std::string user{};
     std::string fd{};
     std::string type{};
-    int node{-1};
+    bool unknown_node{};
+    unsigned long long node{};
     std::string name{};
 
     CommandRecord(std::string _command, int _pid, std::string _user,
-                  std::string _fd, std::string _type, int _node,
-                  std::string _name)
+                  std::string _fd, std::string _type, bool _unknown_node,
+                  unsigned long long _node, std::string _name)
         : command(_command),
           pid(_pid),
           user(_user),
           fd(_fd),
           type(_type),
+          unknown_node(_unknown_node),
           node(_node),
           name(_name) {}
 };
@@ -41,7 +44,7 @@ void usage(const char* program_name);
 bool isnumber(const std::string& dir_name);
 
 // Print spaces in the results for formatting
-void print_spaces(const int count);
+void print_spaces(const int& count);
 
 // Find all processes in /proc
 void find_processes(std::vector<CommandRecord>& processes,
@@ -63,6 +66,9 @@ std::string find_username(const int& pid);
 
 // Resolve file type from state
 std::string resolve_file_type(const struct stat& stat_buf);
+
+// Resolve file access mode
+std::string resolve_access_mode(const int& flag);
 
 // Resolve symbolic link for current working directory, root directory, and
 // program file

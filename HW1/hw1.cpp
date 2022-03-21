@@ -63,12 +63,12 @@ void usage(const char* program_name) {
 
 // Check whether the directory name only contains digits
 bool isnumber(const std::string& dir_name) {
-    return !dir_name.empty() &&
+    return !dir_name.empty() and
            std::all_of(dir_name.begin(), dir_name.end(), ::isdigit);
 }
 
 // Print spaces in the results for formatting
-void print_spaces(const int count) {
+void print_spaces(const int& count) {
     for (int i = 0; i < count; i++) std::cout << " ";
 }
 
@@ -205,6 +205,22 @@ std::string resolve_file_type(const struct stat& stat_buf) {
     }
 }
 
+// Resolve file access mode
+std::string resolve_access_mode(const int& flag) {
+    switch (flag & 3) {
+        case O_RDONLY: {
+            return "+r";
+        }
+        case O_WRONLY: {
+            return "+w";
+        }
+        case O_RDWR:
+        default: {
+            return "+u";
+        }
+    }
+}
+
 // Resolve symbolic link for current working directory, root directory, and
 // program file
 bool resolve_sym_link(const int& pid, const char* filename,
@@ -220,8 +236,6 @@ bool resolve_sym_link(const int& pid, const char* filename,
         fd = "rtd";
     else if (fd == "exe")
         fd = "txt";
-    std::string type{"unknown"};
-    int node{-1};
     std::string name{path_name + " (Permission denied)"};
 
     char buf[1000];
@@ -229,29 +243,29 @@ bool resolve_sym_link(const int& pid, const char* filename,
     if ((size = readlink(path_name.c_str(), buf, 1000)) == -1) {
         if (errno == EACCES) {
             // Append a "permission denied" entry
-            if ((type_filter.length() == 0 or type_filter == type) and
+            if ((type_filter.length() == 0 or type_filter == "unknown") and
                 std::regex_match(name, filename_regex))
-                temp_processes.emplace_back(command, pid, user, fd, type, node,
-                                            name);
+                temp_processes.emplace_back(command, pid, user, fd, "unknown",
+                                            true, 0, name);
         } else {
             // Append nothing if the process stops running etc.
             return false;
         }
     } else {
-        struct stat stat_buf{};
+        struct stat stat_buf {};
         if (stat(path_name.c_str(), &stat_buf) == -1) {
             // Append nothing if the process stops running etc.
             return false;
         }
 
-        type = resolve_file_type(stat_buf);
-        node = stat_buf.st_ino;
+        std::string type{resolve_file_type(stat_buf)};
+        unsigned long long node{stat_buf.st_ino};
         buf[size] = '\0';
         name = buf;
         if ((type_filter.length() == 0 or type_filter == type) and
             std::regex_match(name, filename_regex))
-            temp_processes.emplace_back(command, pid, user, fd, type, node,
-                                        name);
+            temp_processes.emplace_back(command, pid, user, fd, type, false,
+                                        node, name);
     }
 
     return true;
@@ -301,7 +315,7 @@ bool find_mem_del(const int& pid, const std::string& command,
     std::unordered_set<std::string> mem_records{};
     std::unordered_set<std::string> del_records{};
 
-    int node{};
+    unsigned long long node{};
     std::string filename{};
 
     ifs.open(path_name);
@@ -326,7 +340,7 @@ bool find_mem_del(const int& pid, const std::string& command,
 
             if (std::regex_match(filename, filename_regex))
                 mem_processes.emplace_back(command, pid, user, "mem", "REG",
-                                           node, filename);
+                                           false, node, filename);
         } else {
             // DEL
             auto got = del_records.find(filename);
@@ -335,7 +349,7 @@ bool find_mem_del(const int& pid, const std::string& command,
 
             if (std::regex_match(filename, filename_regex))
                 mem_processes.emplace_back(command, pid, user, "DEL", "REG",
-                                           node, filename);
+                                           false, node, filename);
         }
     }
     if (ifs.fail() && !ifs.eof()) {
@@ -359,59 +373,93 @@ bool find_file_descriptors(const int& pid, const std::string& command,
                            const std::string& type_filter,
                            const std::regex& filename_regex) {
     // Open /proc/<pid>/fd directory
-    DIR* directory{};
-    std::string path_name{"/proc/" + std::to_string(pid) + "/fd"};
-    if (!(directory = opendir(path_name.c_str()))) {
+    DIR* fd_dir{};
+    std::string fd_path{"/proc/" + std::to_string(pid) + "/fd"};
+    if (!(fd_dir = opendir(fd_path.c_str()))) {
         if (errno != EACCES) {
-            perror("Open dir: ");
             return false;
         }
         if ((type_filter.length() == 0 or type_filter == "unknown") and
-            std::regex_match(path_name, filename_regex))
+            std::regex_match(fd_path, filename_regex))
             temp_processes.emplace_back(command, pid, user, "NOFD", "unknown",
-                                        -1, path_name + " (Permission denied)");
+                                        true, 0,
+                                        fd_path + " (Permission denied)");
         return true;
     }
 
-    std::string type{}, name{};
-    int node{};
+    // Open /proc/<pid>/fdinfo directory
+    DIR* fdinfo_dir{};
+    std::string fdinfo_path{"/proc/" + std::to_string(pid) + "/fdinfo"};
+    if (!(fdinfo_dir = opendir(fdinfo_path.c_str()))) {
+        if (errno != EACCES) {
+            return false;
+        }
+        if ((type_filter.length() == 0 or type_filter == "unknown") and
+            std::regex_match(fd_path, filename_regex))
+            temp_processes.emplace_back(command, pid, user, "NOFD", "unknown",
+                                        true, 0,
+                                        fd_path + " (Permission denied)");
+        return true;
+    }
 
     // Iterate all file descriptors
     dirent* dir_info{};
     char buf[1000];
     ssize_t size{};
     struct stat stat_buf {};
-    while ((dir_info = readdir(directory))) {
+    while ((dir_info = readdir(fd_dir))) {
         if (!isnumber(dir_info->d_name)) continue;
 
         // Resolve to which file the file descriptor points
-        name = path_name + "/" + dir_info->d_name;
-        if ((size = readlink(name.c_str(), buf, 1000)) == -1) {
-            closedir(directory);
+        std::string fd_name{fd_path + "/" + dir_info->d_name};
+        if ((size = readlink(fd_name.c_str(), buf, 1000)) == -1) {
+            closedir(fd_dir);
+            closedir(fdinfo_dir);
             return false;
         }
 
         // Get state of the file descriptor
-        if (stat(name.c_str(), &stat_buf) == -1) {
-            closedir(directory);
+        if (stat(fd_name.c_str(), &stat_buf) == -1) {
+            closedir(fd_dir);
+            closedir(fdinfo_dir);
             return false;
         }
 
-        type = resolve_file_type(stat_buf);
+        // Get file type
+        std::string type{resolve_file_type(stat_buf)};
         if (type_filter.length() != 0 and type_filter != type) continue;
 
-        node = stat_buf.st_ino;
+        // Get inode
+        unsigned long long node{stat_buf.st_ino};
 
+        // Get filename
         buf[size] = '\0';
-        name = buf;
+        std::string name{buf};
         std::istringstream ss(name);
         ss >> name;
         if (!std::regex_match(name, filename_regex)) continue;
 
-        temp_processes.emplace_back(command, pid, user, dir_info->d_name, type,
-                                    node, name);
+        // Open /proc/<pid>/fdinfo/<fd> to get access mode
+        std::ifstream ifs{};
+        ifs.open(fdinfo_path + "/" + dir_info->d_name);
+        std::string line{};
+        int flag{};
+        if (ifs.good()) {
+            std::getline(ifs, line);
+            std::getline(ifs, line);
+            std::istringstream ss(line);
+            ss >> line;
+            ss >> flag;
+        } else {
+            continue;
+        }
+
+        temp_processes.emplace_back(
+            command, pid, user, dir_info->d_name + resolve_access_mode(flag),
+            type, false, node, name);
     }
-    closedir(directory);
+    closedir(fd_dir);
+    closedir(fdinfo_dir);
 
     return true;
 }
@@ -428,11 +476,11 @@ void print_results(const std::vector<CommandRecord>& processes) {
 
         std::cout << record.fd << "\t" << record.type << "\t\t";
 
-        if (record.node != -1) {
+        if (record.unknown_node) {
+            print_spaces(16);
+        } else {
             std::cout << record.node;
             print_spaces(16 - std::to_string(record.node).length());
-        } else {
-            print_spaces(16);
         }
 
         std::cout << record.name << "\t\t" << std::endl;
