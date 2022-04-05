@@ -4,7 +4,7 @@ int main(int argc, char* argv[]) {
     // Parse arguments
     char ch{};
     std::string output_file{};
-    std::string logger_path{"./logger.so"};
+    std::string logger_path{"LD_PRELOAD=./logger.so"};
     while ((ch = getopt(argc, argv, "o:p:")) != -1) {
         switch (ch) {
             case 'o': {
@@ -12,7 +12,7 @@ int main(int argc, char* argv[]) {
                 break;
             }
             case 'p': {
-                logger_path = std::string(optarg);
+                logger_path = std::string("LD_PRELOAD=") + std::string(optarg);
                 break;
             }
             default: {
@@ -41,5 +41,19 @@ int main(int argc, char* argv[]) {
     for (int idx{optind + 1}; idx < argc; idx++)
         arguments.emplace_back(argv[idx]);
 
+    // Set LD_PRELOAD
+    set_ld_preload(logger_path);
+
+    // Unset LD_PRELOAD
+    unset_ld_preload();
+
     return 0;
 }
+
+void set_ld_preload(const std::string& logger_path) {
+    char variable[11 + logger_path.length()];
+    strcpy(variable, logger_path.c_str());
+    putenv(variable);
+}
+
+void unset_ld_preload() { unsetenv("LD_PRELOAD"); }
