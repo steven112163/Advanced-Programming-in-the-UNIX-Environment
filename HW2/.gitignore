@@ -3,4 +3,4 @@ logger_objs
 logger
 logger.so
 .vscode
-normal_test
+sample
