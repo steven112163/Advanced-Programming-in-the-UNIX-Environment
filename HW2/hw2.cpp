@@ -25,11 +25,11 @@ int main(int argc, char* argv[]) {
     while ((ch = getopt(argc, argv, "o:p:")) != -1) {
         switch (ch) {
             case 'o': {
-                output_file = std::string(optarg);
+                output_file = "OUTPUT_FILE=" + std::string(optarg);
                 break;
             }
             case 'p': {
-                logger_path = std::string("LD_PRELOAD=") + std::string(optarg);
+                logger_path = "LD_PRELOAD=" + std::string(optarg);
                 break;
             }
             default: {
@@ -56,16 +56,14 @@ int main(int argc, char* argv[]) {
     if (pid == 0) {
         // Child
         // Set LD_PRELOAD
-        char variable[logger_path.length() + 1];
-        strcpy(variable, logger_path.c_str());
-        putenv(variable);
+        char var_ld_preload[logger_path.length() + 1];
+        strcpy(var_ld_preload, logger_path.c_str());
+        putenv(var_ld_preload);
 
         // Set OUTPUT_FILE
-        if (!output_file.empty()) {
-            char variable[12 + output_file.length() + 1];
-            strcpy(variable, ("OUTPUT_FILE=" + output_file).c_str());
-            putenv(variable);
-        }
+        char var_output_file[output_file.length() + 1];
+        strcpy(var_output_file, output_file.c_str());
+        putenv(var_output_file);
 
         // Construct arguments for execvp
         int len_of_arg = arguments.size() + 2;
