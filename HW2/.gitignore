@@ -1,5 +1,6 @@
+hw_objs
 logger_objs
-so_objs
 logger
 logger.so
 .vscode
+normal_test

@@ -1,4 +1,21 @@
-#include "hw2.hpp"
+#include <sys/wait.h>
+#include <unistd.h>
+
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
+#include <string>
+#include <vector>
+
+void print_message() {
+    std::cout
+        << "usage: ./logger [-o file] [-p sopath] [--] cmd [cmd args ...]\n"
+        << "        -p: set the path to logger.so, default = ./logger.so\n"
+        << "        -o: print output to file, print to \"stderr\" if no file "
+           "specified\n"
+        << "        --: separate the arguments for logger and for the command\n"
+        << std::endl;
+}
 
 int main(int argc, char* argv[]) {
     // Parse arguments
@@ -16,15 +33,7 @@ int main(int argc, char* argv[]) {
                 break;
             }
             default: {
-                std::cout << "usage: ./logger [-o file] [-p sopath] [--] cmd "
-                             "[cmd args ...]\n"
-                          << "        -p: set the path to logger.so, default = "
-                             "./logger.so\n"
-                          << "        -o: print output to file, print to "
-                             "\"stderr\" if no file specified\n"
-                          << "        --: separate the arguments for logger "
-                             "and for the command\n"
-                          << std::endl;
+                print_message();
                 return 1;
             }
         }
@@ -41,19 +50,30 @@ int main(int argc, char* argv[]) {
     for (int idx{optind + 1}; idx < argc; idx++)
         arguments.emplace_back(argv[idx]);
 
-    // Set LD_PRELOAD
-    set_ld_preload(logger_path);
+    // Fork a process for running the given command
+    int status{};
+    pid_t pid{fork()};
+    if (pid == 0) {
+        // Child
+        // Set LD_PRELOAD
+        char variable[logger_path.length() + 1];
+        strcpy(variable, logger_path.c_str());
+        putenv(variable);
 
-    // Unset LD_PRELOAD
-    unset_ld_preload();
+        // Construct arguments for execvp
+        int len_of_arg = arguments.size() + 2;
+        char* arg[len_of_arg];
+        arg[0] = strdup(command.c_str());
+        for (int idx = 1; idx < len_of_arg - 1; idx++)
+            arg[idx] = strdup(arguments[idx - 1].c_str());
+        arg[len_of_arg - 1] = nullptr;
+
+        // Execute command
+        execvp(arg[0], arg);
+    } else {
+        // Parent
+        wait(&status);
+    }
 
     return 0;
 }
-
-void set_ld_preload(const std::string& logger_path) {
-    char variable[11 + logger_path.length()];
-    strcpy(variable, logger_path.c_str());
-    putenv(variable);
-}
-
-void unset_ld_preload() { unsetenv("LD_PRELOAD"); }
