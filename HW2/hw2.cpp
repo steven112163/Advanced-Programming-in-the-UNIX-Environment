@@ -60,6 +60,13 @@ int main(int argc, char* argv[]) {
         strcpy(variable, logger_path.c_str());
         putenv(variable);
 
+        // Set OUTPUT_FILE
+        if (!output_file.empty()) {
+            char variable[12 + output_file.length() + 1];
+            strcpy(variable, ("OUTPUT_FILE=" + output_file).c_str());
+            putenv(variable);
+        }
+
         // Construct arguments for execvp
         int len_of_arg = arguments.size() + 2;
         char* arg[len_of_arg];
