@@ -1,4 +1,6 @@
+#include <climits>
 #include <cstdarg>
+#include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <linux_cmd.hpp>

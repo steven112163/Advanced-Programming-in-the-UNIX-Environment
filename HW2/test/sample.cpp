@@ -35,7 +35,8 @@ int main() {
     fclose(test_file);
     remove("./bbbb");
 
-    std::cout << "sample done." << std::endl;
+    char output_buf[] = "sample done.\n";
+    write(1, output_buf, 13);
 
     return 0;
 }

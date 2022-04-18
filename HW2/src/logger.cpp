@@ -3,9 +3,17 @@
 int chmod(const char* pathname, mode_t mode) {
     int status{linux_chmod(pathname, mode)};
 
+    char real_pathname[PATH_MAX];
+    char* result{realpath(pathname, real_pathname)};
+
     std::stringstream ss;
-    ss << "[logger] chmod(\"" << pathname << "\", " << std::setfill('0')
-       << std::setw(3) << std::oct << mode << ") = " << status << std::endl;
+    ss << "[logger] chmod(\"";
+    if (result == nullptr)
+        ss << pathname;
+    else
+        ss << real_pathname;
+    ss << "\", " << std::setfill('0') << std::setw(3) << std::oct << mode
+       << ") = " << status << std::endl;
     print_log(ss.str());
 
     return status;
@@ -14,19 +22,29 @@ int chmod(const char* pathname, mode_t mode) {
 int chown(const char* pathname, uid_t owner, gid_t group) {
     int status{linux_chown(pathname, owner, group)};
 
+    char real_pathname[PATH_MAX];
+    char* result{realpath(pathname, real_pathname)};
+
     std::stringstream ss;
-    ss << "[logger] chown(\"" << pathname << "\", " << owner << ", " << group
-       << ") = " << status << std::endl;
+    ss << "[logger] chown(\"";
+    if (result == nullptr)
+        ss << pathname;
+    else
+        ss << real_pathname;
+    ss << "\", " << owner << ", " << group << ") = " << status << std::endl;
     print_log(ss.str());
 
     return status;
 }
 
 int close(int fd) {
+    std::stringstream ss;
+    ss << "[logger] close(\"";
+    ss << resolve_fd(fd);
+
     int status{linux_close(fd)};
 
-    std::stringstream ss;
-    ss << "[logger] close(\"" << fd << "\") = " << status << std::endl;
+    ss << "\") = " << status << std::endl;
     print_log(ss.str());
 
     return status;
@@ -35,19 +53,30 @@ int close(int fd) {
 int creat(const char* pathname, mode_t mode) {
     int status{linux_creat(pathname, mode)};
 
+    char real_pathname[PATH_MAX];
+    char* result{realpath(pathname, real_pathname)};
+
     std::stringstream ss;
-    ss << "[logger] creat(\"" << pathname << "\", " << std::setfill('0')
-       << std::setw(3) << std::oct << mode << ") = " << status << std::endl;
+    ss << "[logger] creat(\"";
+    if (result == nullptr)
+        ss << pathname;
+    else
+        ss << real_pathname;
+    ss << "\", " << std::setfill('0') << std::setw(3) << std::oct << mode
+       << ") = " << status << std::endl;
     print_log(ss.str());
 
     return status;
 }
 
 int fclose(FILE* stream) {
+    std::stringstream ss;
+    ss << "[logger] fclose(\"";
+    ss << resolve_file(stream);
+
     int status{linux_fclose(stream)};
 
-    std::stringstream ss;
-    ss << "[logger] fclose(\"" << stream << "\") = " << status << std::endl;
+    ss << "\") = " << status << std::endl;
     print_log(ss.str());
 
     return status;
@@ -56,9 +85,16 @@ int fclose(FILE* stream) {
 FILE* fopen(const char* pathname, const char* mode) {
     FILE* stream{linux_fopen(pathname, mode)};
 
+    char real_pathname[PATH_MAX];
+    char* result{realpath(pathname, real_pathname)};
+
     std::stringstream ss;
-    ss << "[logger] fopen(\"" << pathname << "\", \"" << mode
-       << "\") = " << stream << std::endl;
+    ss << "[logger] fopen(\"";
+    if (result == nullptr)
+        ss << pathname;
+    else
+        ss << real_pathname;
+    ss << "\", \"" << mode << "\") = " << stream << std::endl;
     print_log(ss.str());
 
     return stream;
@@ -68,19 +104,23 @@ size_t fread(void* ptr, size_t size, size_t nmemb, FILE* stream) {
     size_t number_of_items{linux_fread(ptr, size, nmemb, stream)};
 
     std::stringstream ss;
-    ss << "[logger] fread(\"" << ptr << "\", " << size << ", " << nmemb
-       << ", \"" << stream << "\") = " << number_of_items << std::endl;
+    ss << "[logger] fread(\"" << convert_char_buf((char*)ptr) << "\", " << size
+       << ", " << nmemb << ", \"";
+    ss << resolve_file(stream);
+    ss << "\") = " << number_of_items << std::endl;
     print_log(ss.str());
 
     return number_of_items;
 }
 
 size_t fwrite(const void* ptr, size_t size, size_t nmemb, FILE* stream) {
+    std::stringstream ss;
+    ss << "[logger] fwrite(\"" << convert_char_buf((char*)ptr) << "\", " << size
+       << ", " << nmemb << ", \"";
+    ss << resolve_file(stream);
     size_t number_of_items{linux_fwrite(ptr, size, nmemb, stream)};
 
-    std::stringstream ss;
-    ss << "[logger] fwrite(\"" << ptr << "\", " << size << ", " << nmemb
-       << ", \"" << stream << "\") = " << number_of_items << std::endl;
+    ss << "\") = " << number_of_items << std::endl;
     print_log(ss.str());
 
     return number_of_items;
@@ -93,10 +133,18 @@ int open(const char* pathname, int flags, ...) {
 
     int fd{linux_open(pathname, flags, mode)};
 
+    char real_pathname[PATH_MAX];
+    char* result{realpath(pathname, real_pathname)};
+
     std::stringstream ss;
-    ss << "[logger] open(\"" << pathname << "\", " << std::setfill('0')
-       << std::setw(3) << std::oct << flags << ", " << std::setfill('0')
-       << std::setw(3) << std::oct << mode << ") = " << fd << std::endl;
+    ss << "[logger] open(\"";
+    if (result == nullptr)
+        ss << pathname;
+    else
+        ss << real_pathname;
+    ss << "\", " << std::setfill('0') << std::setw(3) << std::oct << flags
+       << ", " << std::setfill('0') << std::setw(3) << std::oct << mode
+       << ") = " << fd << std::endl;
     print_log(ss.str());
 
     va_end(args);
@@ -105,10 +153,13 @@ int open(const char* pathname, int flags, ...) {
 }
 
 ssize_t read(int fd, void* buf, size_t count) {
+    std::stringstream ss;
+    ss << "[logger] read(\"";
+    ss << resolve_fd(fd);
+
     ssize_t number_of_bytes{linux_read(fd, buf, count)};
 
-    std::stringstream ss;
-    ss << "[logger] read(\"" << fd << "\", \"" << buf << "\", " << count
+    ss << "\", \"" << convert_char_buf((char*)buf) << "\", " << count
        << ") = " << number_of_bytes << std::endl;
     print_log(ss.str());
 
@@ -116,21 +167,44 @@ ssize_t read(int fd, void* buf, size_t count) {
 }
 
 int remove(const char* pathname) {
-    int status{linux_remove(pathname)};
+    char real_pathname[PATH_MAX];
+    char* result{realpath(pathname, real_pathname)};
 
     std::stringstream ss;
-    ss << "[logger] remove(\"" << pathname << "\") = " << status << std::endl;
+    ss << "[logger] remove(\"";
+    if (result == nullptr)
+        ss << pathname;
+    else
+        ss << real_pathname;
+
+    int status{linux_remove(pathname)};
+    ss << "\") = " << status << std::endl;
     print_log(ss.str());
 
     return status;
 }
 
 int rename(const char* oldpath, const char* newpath) {
-    int status{linux_rename(oldpath, newpath)};
-
     std::stringstream ss;
-    ss << "[logger] rename(\"" << oldpath << "\", \"" << newpath
-       << "\") = " << status << std::endl;
+    ss << "[logger] rename(\"";
+
+    char real_pathname[PATH_MAX];
+    char* result{realpath(oldpath, real_pathname)};
+    if (result == nullptr)
+        ss << oldpath;
+    else
+        ss << real_pathname;
+
+    int status{linux_rename(oldpath, newpath)};
+    ss << "\", \"";
+
+    result = realpath(newpath, real_pathname);
+    if (result == nullptr)
+        ss << newpath;
+    else
+        ss << real_pathname;
+
+    ss << "\") = " << status << std::endl;
     print_log(ss.str());
 
     return status;
@@ -147,10 +221,13 @@ FILE* tmpfile(void) {
 }
 
 ssize_t write(int fd, const void* buf, size_t count) {
+    std::stringstream ss;
+    ss << "[logger] write(\"";
+    ss << resolve_fd(fd);
+
     ssize_t number_of_bytes{linux_write(fd, buf, count)};
 
-    std::stringstream ss;
-    ss << "[logger] write(\"" << fd << "\", \"" << buf << "\", " << count
+    ss << "\", \"" << convert_char_buf((char*)buf) << "\", " << count
        << ") = " << number_of_bytes << std::endl;
     print_log(ss.str());
 
