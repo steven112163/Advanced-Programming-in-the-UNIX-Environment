@@ -35,6 +35,8 @@ extern long errno;
 
 #define NULL ((void *)0)
 
+
+
 /* from /usr/include/asm-generic/fcntl.h */
 #define O_ACCMODE 00000003
 #define O_RDONLY 00000000
@@ -83,6 +85,8 @@ extern long errno;
 #define O_CLOEXEC 02000000 /* set close_on_exec */
 #endif
 
+
+
 /* from /usr/include/asm-generic/errno-base.h */
 #define EPERM 1    /* Operation not permitted */
 #define ENOENT 2   /* No such file or directory */
@@ -118,6 +122,8 @@ extern long errno;
 #define EPIPE 32   /* Broken pipe */
 #define EDOM 33    /* Math argument out of domain of func */
 #define ERANGE 34  /* Math result not representable */
+
+
 
 /* from /usr/include/x86_64-linux-gnu/asm/signal.h */
 #define SIGHUP 1
@@ -155,6 +161,8 @@ extern long errno;
 #define SIGSYS 31
 #define SIGUNUSED 31
 
+
+
 /* from /usr/include/x86_64-linux-gnu/bits/sigaction.h */
 #define SA_NOCLDSTOP 1 /* Don't send SIGCHLD when children stop.  */
 #define SA_NOCLDWAIT 2 /* Don't create zombie on child death.  */
@@ -168,6 +176,8 @@ extern long errno;
     0x40000000 /* Don't automatically block the signal when its handler is \
                   being executed.  */
 #define SA_RESETHAND 0x80000000 /* Reset to SIG_DFL on entry to handler.  */
+
+
 
 /* from /usr/include/asm-generic/signal-defs.h */
 #ifndef SIG_BLOCK
@@ -183,11 +193,16 @@ extern long errno;
 #define SIG_IGN ((__sighandler_t)1)  /* ignore signal */
 #define SIG_ERR ((__sighandler_t)-1) /* error return from signal */
 
+
+
 /* system calls */
+long sys_alarm(unsigned int seconds);
 long sys_write(int fd, const void *buf, size_t count);
 long sys_pause();
 long sys_nanosleep(struct timespec *rqtp, struct timespec *rmtp);
 long sys_exit(int error_code) __attribute__((noreturn));
+
+
 
 /* function definitions */
 int sigaction(int signum, const struct sigaction *act,
@@ -202,8 +217,7 @@ int sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
 sighandler_t signal(int signum, sighandler_t handler);
 int setjmp(jmp_buf env);
 void longjmp(jmp_buf env, int val);
-unsigned int alarm(unsigned int sec);
-
+unsigned int alarm(unsigned int seconds);
 ssize_t write(int fd, const void *buf, size_t count);
 int pause();
 unsigned int sleep(unsigned int seconds);

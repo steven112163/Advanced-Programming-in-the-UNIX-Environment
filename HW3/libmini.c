@@ -17,6 +17,11 @@ long errno;
     }                        \
     return ((type)ret);
 
+unsigned int alarm(unsigned int seconds) {
+    long ret = sys_alarm(seconds);
+    WRAPPER_RETval(unsigned int);
+}
+
 ssize_t write(int fd, const void *buf, size_t count) {
     long ret = sys_write(fd, buf, count);
     WRAPPER_RETval(ssize_t);

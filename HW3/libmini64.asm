@@ -17,4 +17,5 @@ section .text
 gensys   1, write
 gensys  34, pause
 gensys  35, nanosleep
+gensys  37, alarm
 gensys  60, exit
