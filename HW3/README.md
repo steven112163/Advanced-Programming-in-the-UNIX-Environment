@@ -149,4 +149,67 @@ This might be a relatively difficult homework, so we have several hints for this
    jnz	lea	mov	neg	or	pop	push
    ret	sub	syscall	xor
    ```
-9. Please ensure that your header file (libmini.h) exports additional required macros, constants, data types, and function prototypes. You may refer to this file to see what are the minimal requirements that would be used in the sample test codes.
+9. Please ensure that your header file (libmini.h) exports additional required macros, constants, data types, and function prototypes. You may refer to the followings to see what are the minimal requirements that would be used in the sample test codes.
+   ```shell script=
+   /* be sure to export below symbols in your libmini.h */
+
+   /* macros (or constant) */
+   SIGHUP
+   SIGINT
+   SIGQUIT
+   SIGILL
+   SIGTRAP
+   SIGABRT
+   SIGIOT
+   SIGBUS
+   SIGFPE
+   SIGKILL
+   SIGUSR1
+   SIGSEGV
+   SIGUSR2
+   SIGPIPE
+   SIGALRM
+   SIGTERM
+   SIGSTKFLT
+   SIGCHLD
+   SIGCONT
+   SIGSTOP
+   SIGTSTP
+   SIGTTIN
+   SIGTTOU
+   SIGURG
+   SIGXCPU
+   SIGXFSZ
+   SIGVTALRM
+   SIGPROF
+   SIGWINCH
+   SIGIO
+   SIGPWR
+   SIGSYS
+
+   SIG_BLOCK
+   SIG_UNBLOCK
+   SIG_SETMASK
+   SIG_ERR
+   SIG_DFL
+   SIG_IGN
+
+   /* types (implement it yourself) */
+   sigaction
+   sigset_t
+   sighandler_t
+
+   /* function definitions (export it with exactly the same type signature) */
+   int sigaction(int signum, const struct    sigaction *act, struct sigaction *oldact);
+   int sigismember(const sigset_t *set, int sig);
+   int sigaddset (sigset_t *set, int sig);
+   int sigdelset (sigset_t *set, int sig);
+   int sigemptyset(sigset_t *set);
+   int sigfillset(sigset_t *set);
+   int sigpending(sigset_t *set);
+   int sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
+   sighandler_t signal(int signum, sighandler_t handler);
+   int setjmp(jmp_buf env);
+   void longjmp(jmp_buf env, int val);
+   unsigned int alarm(unsigned int sec);
+   ```
