@@ -1,0 +1,8 @@
+build
+*.so
+*.o
+write1
+alarm1
+alarm2
+alarm3
+jmp1

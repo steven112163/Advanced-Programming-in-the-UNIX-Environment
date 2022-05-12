@@ -1,5 +1,7 @@
 #include "libmini.h"
 
+long errno;
+
 #define WRAPPER_RETval(type) \
     errno = 0;               \
     if (ret < 0) {           \
