@@ -8,7 +8,7 @@ BUILD = build
 .PHONY: all clean
 
 all: libmini64.asm libmini.c
-	mkdir $(BUILD)
+	mkdir -p $(BUILD)
 	yasm $(ASSEMBLYFLAGS) libmini64.asm -o $(BUILD)/libmini64.o
 	gcc -o $(BUILD)/libmini.o -c $(CFLAGS) libmini.c
 	ld -shared -o libmini.so $(BUILD)/libmini64.o $(BUILD)/libmini.o

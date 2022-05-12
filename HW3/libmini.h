@@ -1,10 +1,23 @@
 #ifndef LIBMINI_H
 #define LIBMINI_H
 
+#define _NSIG 64
+
+#ifdef __i386__
+#define _NSIG_BPW 32
+#else
+#define _NSIG_BPW 64
+#endif
+
+#define _NSIG_WORDS (_NSIG / _NSIG_BPW)
+
+typedef struct {
+    unsigned long sig[_NSIG_WORDS];
+} sigset_t;
+
 typedef long long size_t;
 typedef long long ssize_t;
 typedef long long off_t;
-typedef unsigned long sigset_t;
 typedef int mode_t;
 typedef int uid_t;
 typedef int gid_t;
@@ -34,8 +47,6 @@ struct timespec {
 extern long errno;
 
 #define NULL ((void *)0)
-
-
 
 /* from /usr/include/asm-generic/fcntl.h */
 #define O_ACCMODE 00000003
@@ -85,8 +96,6 @@ extern long errno;
 #define O_CLOEXEC 02000000 /* set close_on_exec */
 #endif
 
-
-
 /* from /usr/include/asm-generic/errno-base.h */
 #define EPERM 1    /* Operation not permitted */
 #define ENOENT 2   /* No such file or directory */
@@ -122,8 +131,6 @@ extern long errno;
 #define EPIPE 32   /* Broken pipe */
 #define EDOM 33    /* Math argument out of domain of func */
 #define ERANGE 34  /* Math result not representable */
-
-
 
 /* from /usr/include/x86_64-linux-gnu/asm/signal.h */
 #define SIGHUP 1
@@ -161,8 +168,6 @@ extern long errno;
 #define SIGSYS 31
 #define SIGUNUSED 31
 
-
-
 /* from /usr/include/x86_64-linux-gnu/bits/sigaction.h */
 #define SA_NOCLDSTOP 1 /* Don't send SIGCHLD when children stop.  */
 #define SA_NOCLDWAIT 2 /* Don't create zombie on child death.  */
@@ -176,8 +181,6 @@ extern long errno;
     0x40000000 /* Don't automatically block the signal when its handler is \
                   being executed.  */
 #define SA_RESETHAND 0x80000000 /* Reset to SIG_DFL on entry to handler.  */
-
-
 
 /* from /usr/include/asm-generic/signal-defs.h */
 #ifndef SIG_BLOCK
@@ -193,16 +196,15 @@ extern long errno;
 #define SIG_IGN ((__sighandler_t)1)  /* ignore signal */
 #define SIG_ERR ((__sighandler_t)-1) /* error return from signal */
 
-
-
 /* system calls */
+long sys_rt_sigpending(sigset_t *set, size_t sigsetsize);
+long sys_rt_sigprocmask(int how, const sigset_t *set, sigset_t *oldset,
+                        size_t sigsetsize);
 long sys_alarm(unsigned int seconds);
 long sys_write(int fd, const void *buf, size_t count);
 long sys_pause();
 long sys_nanosleep(struct timespec *rqtp, struct timespec *rmtp);
 long sys_exit(int error_code) __attribute__((noreturn));
-
-
 
 /* function definitions */
 int sigaction(int signum, const struct sigaction *act,
@@ -224,4 +226,5 @@ unsigned int sleep(unsigned int seconds);
 void exit(int error_code);
 size_t strlen(const char *s);
 void perror(const char *prefix);
+void *memset(void *s, int c, size_t count);
 #endif
