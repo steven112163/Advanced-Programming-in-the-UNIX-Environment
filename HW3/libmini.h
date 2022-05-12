@@ -20,13 +20,15 @@ typedef struct jmp_buf_s {
 } jmp_buf[1];
 
 struct sigaction {
-    union {
-        __sighandler_t _sa_handler;
-        void (*_sa_sigaction)(int, struct siginfo *, void *);
-    } _u;
+    __sighandler_t _sa_handler;
     sigset_t sa_mask;
     unsigned long sa_flags;
     void (*sa_restorer)(void);
+};
+
+struct timespec {
+    long tv_sec;  /* seconds */
+    long tv_nsec; /* nanoseconds */
 };
 
 extern long errno;
@@ -181,6 +183,12 @@ extern long errno;
 #define SIG_IGN ((__sighandler_t)1)  /* ignore signal */
 #define SIG_ERR ((__sighandler_t)-1) /* error return from signal */
 
+/* system calls */
+long sys_write(int fd, const void *buf, size_t count);
+long sys_pause();
+long sys_nanosleep(struct timespec *rqtp, struct timespec *rmtp);
+long sys_exit(int error_code) __attribute__((noreturn));
+
 /* function definitions */
 int sigaction(int signum, const struct sigaction *act,
               struct sigaction *oldact);
@@ -195,9 +203,10 @@ sighandler_t signal(int signum, sighandler_t handler);
 int setjmp(jmp_buf env);
 void longjmp(jmp_buf env, int val);
 unsigned int alarm(unsigned int sec);
+
 ssize_t write(int fd, const void *buf, size_t count);
 int pause();
-unsigned int sleep(unsigned int s);
+unsigned int sleep(unsigned int seconds);
 void exit(int error_code);
 size_t strlen(const char *s);
 void perror(const char *prefix);
