@@ -11,13 +11,77 @@ sys_%2:
 
 ; RDI, RSI, RDX, RCX, R8, R9
 
-section .data
+extern errno
 
-section .text
-gensys   1, write
-gensys  14, rt_sigprocmask
-gensys  34, pause
-gensys  35, nanosleep
-gensys  37, alarm
-gensys  60, exit
-gensys 127, rt_sigpending
+	section .data
+
+	section .text
+
+	gensys   0, read
+	gensys   1, write
+	gensys   2, open
+	gensys   3, close
+	gensys   9, mmap
+	gensys  10, mprotect
+	gensys  11, munmap
+	gensys  13, rt_sigaction
+	gensys  14, rt_sigprocmask
+	gensys  22, pipe
+	gensys  32, dup
+	gensys  33, dup2
+	gensys  34, pause
+	gensys  35, nanosleep
+	gensys  37, alarm
+	gensys  57, fork
+	gensys  60, exit
+	gensys  79, getcwd
+	gensys  80, chdir
+	gensys  82, rename
+	gensys  83, mkdir
+	gensys  84, rmdir
+	gensys  85, creat
+	gensys  86, link
+	gensys  88, unlink
+	gensys  89, readlink
+	gensys  90, chmod
+	gensys  92, chown
+	gensys  95, umask
+	gensys  96, gettimeofday
+	gensys 102, getuid
+	gensys 104, getgid
+	gensys 105, setuid
+	gensys 106, setgid
+	gensys 107, geteuid
+	gensys 108, getegid
+	gensys 127, rt_sigpending
+
+	global open:function
+open:
+	call	sys_open
+	cmp	rax, 0
+	jge	open_success	; no error :)
+open_error:
+	neg	rax
+%ifdef NASM
+	mov	rdi, [rel errno wrt ..gotpc]
+%else
+	mov	rdi, [rel errno wrt ..gotpcrel]
+%endif
+	mov	[rdi], rax	; errno = -rax
+	mov	rax, -1
+	jmp	open_quit
+open_success:
+%ifdef NASM
+	mov	rdi, [rel errno wrt ..gotpc]
+%else
+	mov	rdi, [rel errno wrt ..gotpcrel]
+%endif
+	mov	QWORD [rdi], 0	; errno = 0
+open_quit:
+	ret
+
+	global sigreturn:function
+sigreturn:
+	mov		rax, 15
+	syscall
+	ret

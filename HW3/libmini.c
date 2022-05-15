@@ -17,66 +17,45 @@ long errno;
     }                        \
     return ((type)ret);
 
-int sigismember(const sigset_t *set, int sig) {
-    unsigned long _sig = sig - 1;
-    if (_NSIG_WORDS == 1)
-        return 1 & (set->sig[0] >> _sig);
-    else
-        return 1 & (set->sig[_sig / _NSIG_BPW] >> (_sig % _NSIG_BPW));
+////////////
+// Wrappers
+////////////
+ssize_t read(int fd, char *buf, size_t count) {
+    long ret = sys_read(fd, buf, count);
+    WRAPPER_RETval(ssize_t);
 }
 
-int sigaddset(sigset_t *set, int sig) {
-    unsigned long _sig = sig - 1;
-    if (_NSIG_WORDS == 1)
-        set->sig[0] |= 1UL << _sig;
-    else
-        set->sig[_sig / _NSIG_BPW] |= 1UL << (_sig % _NSIG_BPW);
-
-    return 0;
+ssize_t write(int fd, const void *buf, size_t count) {
+    long ret = sys_write(fd, buf, count);
+    WRAPPER_RETval(ssize_t);
 }
 
-int sigdelset(sigset_t *set, int sig) {
-    unsigned long _sig = sig - 1;
-    if (_NSIG_WORDS == 1)
-        set->sig[0] &= ~(1UL << _sig);
-    else
-        set->sig[_sig / _NSIG_BPW] &= ~(1UL << (_sig % _NSIG_BPW));
+/* open is implemented in assembly, because of variable length arguments */
 
-    return 0;
+int close(unsigned int fd) {
+    long ret = sys_close(fd);
+    WRAPPER_RETval(int);
 }
 
-int sigemptyset(sigset_t *set) {
-    switch (_NSIG_WORDS) {
-        default:
-            memset(set, 0, sizeof(sigset_t));
-            break;
-        case 2:
-            set->sig[1] = 0;
-        case 1:
-            set->sig[0] = 0;
-            break;
-    }
-
-    return 0;
+void *mmap(void *addr, size_t len, int prot, int flags, int fd, off_t off) {
+    long ret = sys_mmap(addr, len, prot, flags, fd, off);
+    WRAPPER_RETptr(void *);
 }
 
-int sigfillset(sigset_t *set) {
-    switch (_NSIG_WORDS) {
-        default:
-            memset(set, -1, sizeof(sigset_t));
-            break;
-        case 2:
-            set->sig[1] = -1;
-        case 1:
-            set->sig[0] = -1;
-            break;
-    }
-
-    return 0;
+int mprotect(void *addr, size_t len, int prot) {
+    long ret = sys_mprotect(addr, len, prot);
+    WRAPPER_RETval(int);
 }
 
-int sigpending(sigset_t *set) {
-    long ret = sys_rt_sigpending(set, sizeof(sigset_t));
+int munmap(void *addr, size_t len) {
+    long ret = sys_munmap(addr, len);
+    WRAPPER_RETval(int);
+}
+
+int sigaction(int signum, struct sigaction *act, struct sigaction *oldact) {
+    act->sa_flags |= SA_RESTORER;
+    act->sa_restorer = (void (*)(void)) & sigreturn;
+    long ret = sys_rt_sigaction(signum, act, oldact, sizeof(sigset_t));
     WRAPPER_RETval(int);
 }
 
@@ -85,19 +64,193 @@ int sigprocmask(int how, const sigset_t *set, sigset_t *oldset) {
     WRAPPER_RETval(int);
 }
 
-unsigned int alarm(unsigned int seconds) {
-    long ret = sys_alarm(seconds);
-    WRAPPER_RETval(unsigned int);
+int pipe(int *filedes) {
+    long ret = sys_pipe(filedes);
+    WRAPPER_RETval(int);
 }
 
-ssize_t write(int fd, const void *buf, size_t count) {
-    long ret = sys_write(fd, buf, count);
-    WRAPPER_RETval(ssize_t);
+int dup(int filedes) {
+    long ret = sys_dup(filedes);
+    WRAPPER_RETval(int);
+}
+
+int dup2(int oldfd, int newfd) {
+    long ret = sys_dup2(oldfd, newfd);
+    WRAPPER_RETval(int);
 }
 
 int pause() {
     long ret = sys_pause();
     WRAPPER_RETval(int);
+}
+
+int nanosleep(struct timespec *rqtp, struct timespec *rmtp) {
+    long ret = sys_nanosleep(rqtp, rmtp);
+    WRAPPER_RETval(int);
+}
+
+unsigned int alarm(unsigned int seconds) {
+    long ret = sys_alarm(seconds);
+    WRAPPER_RETval(unsigned int);
+}
+
+pid_t fork(void) {
+    long ret = sys_fork();
+    WRAPPER_RETval(pid_t);
+}
+
+void exit(int error_code) {
+    sys_exit(error_code);
+    /* never returns? */
+}
+
+char *getcwd(char *buf, size_t size) {
+    long ret = sys_getcwd(buf, size);
+    WRAPPER_RETptr(char *);
+}
+
+int chdir(const char *pathname) {
+    long ret = sys_chdir(pathname);
+    WRAPPER_RETval(int);
+}
+
+int rename(const char *oldname, const char *newname) {
+    long ret = sys_rename(oldname, newname);
+    WRAPPER_RETval(int);
+}
+
+int mkdir(const char *pathname, int mode) {
+    long ret = sys_mkdir(pathname, mode);
+    WRAPPER_RETval(int);
+}
+
+int rmdir(const char *pathname) {
+    long ret = sys_rmdir(pathname);
+    WRAPPER_RETval(int);
+}
+
+int creat(const char *pathname, int mode) {
+    long ret = sys_creat(pathname, mode);
+    WRAPPER_RETval(int);
+}
+
+int link(const char *oldname, const char *newname) {
+    long ret = sys_link(oldname, newname);
+    WRAPPER_RETval(int);
+}
+
+int unlink(const char *pathname) {
+    long ret = sys_unlink(pathname);
+    WRAPPER_RETval(int);
+}
+
+ssize_t readlink(const char *path, char *buf, size_t bufsz) {
+    long ret = sys_readlink(path, buf, bufsz);
+    WRAPPER_RETval(ssize_t);
+}
+
+int chmod(const char *filename, mode_t mode) {
+    long ret = sys_chmod(filename, mode);
+    WRAPPER_RETval(int);
+}
+
+int chown(const char *filename, uid_t user, gid_t group) {
+    long ret = sys_chown(filename, user, group);
+    WRAPPER_RETval(int);
+}
+
+int umask(int mask) {
+    long ret = sys_umask(mask);
+    WRAPPER_RETval(int);
+}
+
+int gettimeofday(struct timeval *tv, struct timezone *tz) {
+    long ret = sys_gettimeofday(tv, tz);
+    WRAPPER_RETval(int);
+}
+
+uid_t getuid() {
+    long ret = sys_getuid();
+    WRAPPER_RETval(uid_t);
+}
+
+gid_t getgid() {
+    long ret = sys_getgid();
+    WRAPPER_RETval(gid_t);
+}
+
+int setuid(uid_t uid) {
+    long ret = sys_setuid(uid);
+    WRAPPER_RETval(int);
+}
+
+int setgid(gid_t gid) {
+    long ret = sys_setgid(gid);
+    WRAPPER_RETval(int);
+}
+
+uid_t geteuid() {
+    long ret = sys_geteuid();
+    WRAPPER_RETval(uid_t);
+}
+
+gid_t getegid() {
+    long ret = sys_getegid();
+    WRAPPER_RETval(uid_t);
+}
+
+int sigpending(sigset_t *set) {
+    long ret = sys_rt_sigpending(set, sizeof(sigset_t));
+    WRAPPER_RETval(int);
+}
+
+////////////////////////
+// Function definitions
+////////////////////////
+int sigismember(const sigset_t *set, int sig) {
+    if (set == NULL || sig < 1 || sig >= NSIG) return -1;
+    return 1 & (set->sig[0] >> (sig - 1));
+}
+
+int sigaddset(sigset_t *set, int sig) {
+    if (set == NULL || sig < 1 || sig >= NSIG) return -1;
+    set->sig[0] |= 1UL << (sig - 1);
+    return 0;
+}
+
+int sigdelset(sigset_t *set, int sig) {
+    if (set == NULL || sig < 1 || sig >= NSIG) return -1;
+    set->sig[0] &= ~(1UL << (sig - 1));
+    return 0;
+}
+
+int sigemptyset(sigset_t *set) {
+    if (set == NULL) return -1;
+    set->sig[0] = 0;
+    return 0;
+}
+
+int sigfillset(sigset_t *set) {
+    if (set == NULL) return -1;
+    set->sig[0] = -1;
+    return 0;
+}
+
+sighandler_t signal(int signum, sighandler_t handler) {
+    struct sigaction act, oldact;
+
+    if (handler == SIG_ERR || signum < 1 || signum >= NSIG) {
+        errno = EINVAL;
+        return SIG_ERR;
+    }
+
+    act.sa_handler = handler;
+    sigemptyset(&act.sa_mask);
+    sigaddset(&act.sa_mask, signum);
+    act.sa_flags = SA_RESTART;
+    if (sigaction(signum, &act, &oldact) < 0) return SIG_ERR;
+
+    return oldact.sa_handler;
 }
 
 unsigned int sleep(unsigned int seconds) {
@@ -113,11 +266,6 @@ unsigned int sleep(unsigned int seconds) {
     return 0;
 }
 
-void exit(int error_code) {
-    sys_exit(error_code);
-    /* never returns? */
-}
-
 size_t strlen(const char *s) {
     size_t count = 0;
     while (*s++) count++;
@@ -129,6 +277,11 @@ void *memset(void *s, int c, size_t count) {
 
     while (count--) *xs++ = c;
     return s;
+}
+
+void bzero(void *s, size_t size) {
+    char *ptr = (char *)s;
+    while (size-- > 0) *ptr++ = '\0';
 }
 
 #define PERRMSG_MIN 0
