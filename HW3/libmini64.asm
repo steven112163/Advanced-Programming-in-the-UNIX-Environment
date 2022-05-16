@@ -2,10 +2,10 @@
 	global sys_%2:function
 sys_%2:
 	push	r10
-	mov	r10, rcx
-	mov	rax, %1
+	mov		r10, rcx
+	mov		rax, %1
 	syscall
-	pop	r10
+	pop		r10
 	ret
 %endmacro
 
@@ -58,30 +58,30 @@ extern errno
 	global open:function
 open:
 	call	sys_open
-	cmp	rax, 0
-	jge	open_success	; no error :)
+	cmp		rax, 0
+	jge		open_success	; no error :)
 open_error:
-	neg	rax
+	neg		rax
 %ifdef NASM
-	mov	rdi, [rel errno wrt ..gotpc]
+	mov		rdi, [rel errno wrt ..gotpc]
 %else
-	mov	rdi, [rel errno wrt ..gotpcrel]
+	mov		rdi, [rel errno wrt ..gotpcrel]
 %endif
-	mov	[rdi], rax	; errno = -rax
-	mov	rax, -1
-	jmp	open_quit
+	mov		[rdi], rax	; errno = -rax
+	mov		rax, -1
+	jmp		open_quit
 open_success:
 %ifdef NASM
-	mov	rdi, [rel errno wrt ..gotpc]
+	mov		rdi, [rel errno wrt ..gotpc]
 %else
-	mov	rdi, [rel errno wrt ..gotpcrel]
+	mov		rdi, [rel errno wrt ..gotpcrel]
 %endif
-	mov	QWORD [rdi], 0	; errno = 0
+	mov		QWORD [rdi], 0	; errno = 0
 open_quit:
 	ret
 
-	global sigreturn:function
-sigreturn:
-	mov		rax, 15
-	syscall
-	ret
+    global __myrt:function
+__myrt:
+    mov     rax, 15
+    syscall
+    ret

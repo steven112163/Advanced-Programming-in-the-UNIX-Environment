@@ -3,10 +3,8 @@
 
 #define NSIG 64
 typedef struct {
-    unsigned long sig[1];
+    unsigned long int sig[1];
 } sigset_t;
-
-sigset_t _sigintr;
 
 typedef long long size_t;
 typedef long long ssize_t;
@@ -25,9 +23,9 @@ typedef struct jmp_buf_s {
 
 struct sigaction {
     sighandler_t sa_handler;
-    sigset_t sa_mask;
     int sa_flags;
     void (*sa_restorer)(void);
+    sigset_t sa_mask;
 };
 
 struct timespec {
@@ -241,7 +239,7 @@ long sys_setgid(gid_t gid);
 long sys_geteuid();
 long sys_getegid();
 long sys_rt_sigpending(sigset_t *set, size_t sigsetsize);
-long sigreturn();
+long __myrt();
 
 /* wrappers */
 ssize_t read(int fd, char *buf, size_t count);

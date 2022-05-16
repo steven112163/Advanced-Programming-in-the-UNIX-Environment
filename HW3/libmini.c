@@ -54,7 +54,7 @@ int munmap(void *addr, size_t len) {
 
 int sigaction(int signum, struct sigaction *act, struct sigaction *oldact) {
     act->sa_flags |= SA_RESTORER;
-    act->sa_restorer = (void (*)(void)) & sigreturn;
+    act->sa_restorer = (void (*)(void)) & __myrt;
     long ret = sys_rt_sigaction(signum, act, oldact, sizeof(sigset_t));
     WRAPPER_RETval(int);
 }
@@ -247,7 +247,12 @@ sighandler_t signal(int signum, sighandler_t handler) {
     act.sa_handler = handler;
     sigemptyset(&act.sa_mask);
     sigaddset(&act.sa_mask, signum);
-    act.sa_flags = SA_RESTART;
+
+    act.sa_flags = 0;
+    if (signum == SIGALRM)
+        act.sa_flags |= SA_INTERRUPT;
+    else
+        act.sa_flags |= SA_RESTART;
     if (sigaction(signum, &act, &oldact) < 0) return SIG_ERR;
 
     return oldact.sa_handler;
