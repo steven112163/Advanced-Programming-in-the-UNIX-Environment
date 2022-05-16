@@ -258,6 +258,9 @@ sighandler_t signal(int signum, sighandler_t handler) {
     return oldact.sa_handler;
 }
 
+/* setjmp and longjmp are implemented in assembly, because of storing registers
+ * in the stack */
+
 unsigned int sleep(unsigned int seconds) {
     long ret;
     struct timespec req, rem;

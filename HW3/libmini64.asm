@@ -85,3 +85,50 @@ __myrt:
     mov     rax, 15
     syscall
     ret
+
+	global setjmp:function
+setjmp:
+	pop		rsi ; get return address
+	push	rsi
+	
+	mov 	QWORD [rdi + 8 * 0], rbx	; jmp_buf[0].reg[0] = rbx
+	mov 	QWORD [rdi + 8 * 1], rsp	; jmp_buf[0].reg[1] = rsp
+	mov 	QWORD [rdi + 8 * 2], rbp	; jmp_buf[0].reg[2] = rbp
+	mov 	QWORD [rdi + 8 * 3], r12	; jmp_buf[0].reg[3] = r12
+	mov 	QWORD [rdi + 8 * 4], r13	; jmp_buf[0].reg[4] = r13
+	mov 	QWORD [rdi + 8 * 5], r14	; jmp_buf[0].reg[5] = r14
+	mov 	QWORD [rdi + 8 * 6], r15	; jmp_buf[0].reg[6] = r15
+	mov 	QWORD [rdi + 8 * 7], rsi	; jmp_buf[0].reg[7] = rsi
+
+	mov		rdi, 2				; how = SIG_SETMASK
+	mov		rsi, 0				; set = NULL
+	lea		rdx, [rdi + 8 * 8]	; oldset = &jmp_buf[0].mask
+	mov		rcx, 4				; sigsize = 4
+	call	sys_rt_sigprocmask
+
+	mov		rax, 0	; return 0
+	ret
+
+	global longjmp:function
+longjmp:
+	mov 	rbx, QWORD [rdi + 8 * 0]	; rbx = jmp_buf[0].reg[0]
+	mov 	rsp, QWORD [rdi + 8 * 1]	; rsp = jmp_buf[0].reg[1]
+	mov 	rbp, QWORD [rdi + 8 * 2]	; rbp = jmp_buf[0].reg[2]
+	mov 	r12, QWORD [rdi + 8 * 3]	; r12 = jmp_buf[0].reg[3]
+	mov 	r13, QWORD [rdi + 8 * 4]	; r13 = jmp_buf[0].reg[4]
+	mov 	r14, QWORD [rdi + 8 * 5]	; r14 = jmp_buf[0].reg[5]
+	mov 	r15, QWORD [rdi + 8 * 6]	; r15 = jmp_buf[0].reg[6]
+
+	pop		rax
+	mov 	rax, QWORD [rdi + 8 * 7]	; rsi = jmp_buf[0].reg[7]
+	push	rax
+
+	push	rsi					; val
+	mov		rdi, 2				; how = SIG_SETMASK
+	lea		rsi, [rdi + 8 * 8]	; set = &jmp_buf[0].mask
+	mov		rdx, 0				; oldset = NULL
+	mov		rcx, 4				; sigsize = 4
+	call	sys_rt_sigprocmask
+
+	pop		rax	; return val
+	ret
