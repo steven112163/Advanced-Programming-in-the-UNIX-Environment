@@ -145,6 +145,7 @@ void Debugger::get_a_register() {
     else
         std::cout << "** Unknown register: \"" << this->command[1] << "\""
                   << std::endl;
+    std::cout.copyfmt(std::ios(NULL));
 
     return;
 }
@@ -156,14 +157,14 @@ void Debugger::set_a_register() {
         return;
     }
 
-    if (this->state == State::running) {
+    if (this->state != State::running) {
         std::cout << "** The program is not running." << std::endl;
         return;
     }
 
     std::unordered_map<std::string, unsigned long long int*> registers{
         this->fetch_registers()};
-    *(registers[this->command[0]]) = std::stoull(this->command[1]);
+    *(registers[this->command[1]]) = std::stoull(this->command[2]);
     ptrace(PTRACE_SETREGS, this->child, 0, &this->regs);
 }
 
@@ -204,6 +205,9 @@ void Debugger::get_all_registers() {
               << "RIP   " << std::setw(16) << std::left << *(registers["rip"])
               << " FLAGS " << std::setw(16) << std::right << std::setfill('0')
               << *(registers["eflags"]) << std::endl;
+
+    // Undo io manipulation
+    std::cout.copyfmt(std::ios(NULL));
 }
 
 // Function for fetching all registers and providing them to
@@ -368,8 +372,11 @@ void Debugger::show_memory_layout() {
                 second = "0" + second;
 
             long long field{std::stoll(tokens[2])};
-            std::cout << first << "-" << second << " " << tokens[1] << " "
-                      << field << "\t" << tokens[5] << std::endl;
+            std::cout << std::setw(16) << std::setfill('0') << first << "-"
+                      << std::setw(16) << std::setfill('0') << second << " "
+                      << tokens[1] << " " << field << "\t" << tokens[5]
+                      << std::endl;
+            std::cout.copyfmt(std::ios(NULL));
         }
     }
     ifs.close();
