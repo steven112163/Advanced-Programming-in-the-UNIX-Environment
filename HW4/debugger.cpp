@@ -159,7 +159,22 @@ void Debugger::get_a_register() {
 }
 
 // Function for setting the value of a register in the program
-void Debugger::set_a_register() {}
+void Debugger::set_a_register() {
+    if (!WIFSTOPPED(this->wait_status)) {
+        this->quit_from_the_debugger();
+        return;
+    }
+
+    if (!this->running) {
+        std::cout << "** The program is not running." << std::endl;
+        return;
+    }
+
+    std::unordered_map<std::string, unsigned long long int*> registers{
+        this->fetch_registers()};
+    *(registers[this->command[0]]) = std::stoull(this->command[1]);
+    ptrace(PTRACE_SETREGS, this->child, 0, &this->regs);
+}
 
 // Function for getting values of all registers from the program
 void Debugger::get_all_registers() {
