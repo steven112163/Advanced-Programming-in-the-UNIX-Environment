@@ -6,6 +6,7 @@
 
 #include <cinttypes>
 #include <cstdio>
+#include <fstream>
 #include <functional>
 #include <iomanip>
 #include <iostream>
@@ -14,11 +15,16 @@
 #include <unordered_map>
 #include <vector>
 
-enum State {
-    init,
-    loaded,
-    running
-};
+enum State { init, loaded, running };
+
+std::vector<std::string> tokenize(const std::string& sentence) {
+    std::vector<std::string> tokens{};
+    std::stringstream ss(sentence);
+    std::string word{};
+    while (ss >> word) tokens.push_back(word);
+
+    return tokens;
+}
 
 // Class representing a Simplified Scriptable Instruction Level Debugger
 // Example:

@@ -88,17 +88,10 @@ void Debugger::print_prompt() { std::cout << "sdb> "; }
 // Function for reading user inputs and send the command to the responsible
 // handler
 void Debugger::command_handler() {
-    // Get raw command from the user
+    // Get the command from the user
     std::string raw_command{};
     std::getline(std::cin, raw_command);
-    std::stringstream ss(raw_command);
-
-    // Split the raw command by spaces
-    this->command.clear();
-    std::string word{};
-    while (ss >> word) {
-        this->command.push_back(word);
-    };
+    this->command = tokenize(raw_command);
     if (this->command.size() == 0) return;
 
     // Call the target handler based on the user command
@@ -138,7 +131,7 @@ void Debugger::get_a_register() {
         return;
     }
 
-    if (this->state == State::running) {
+    if (this->state != State::running) {
         std::cout << "** The program is not running." << std::endl;
         return;
     }
@@ -147,8 +140,8 @@ void Debugger::get_a_register() {
         this->fetch_registers()};
     auto it = registers.find(this->command[1]);
     if (it != registers.end())
-        std::cout << this->command[1] << " = " << *(it->second) << std::hex
-                  << " (0x" << *(it->second) << ")" << std::dec << std::endl;
+        std::cout << this->command[1] << " = " << std::dec << *(it->second)
+                  << std::hex << " (0x" << *(it->second) << ")" << std::endl;
     else
         std::cout << "** Unknown register: \"" << this->command[1] << "\""
                   << std::endl;
@@ -188,24 +181,29 @@ void Debugger::get_all_registers() {
 
     std::unordered_map<std::string, unsigned long long int*> registers{
         this->fetch_registers()};
-    std::cout << std::hex << "RAX " << std::setw(16) << registers["rax"]
-              << "RBX " << std::setw(16) << registers["rbx"] << "RCX "
-              << std::setw(16) << registers["rcx"] << "RDX " << std::setw(16)
-              << registers["rdx"] << "\n"
-              << "R8 " << std::setw(16) << registers["r8"] << "R9 "
-              << std::setw(16) << registers["r9"] << "R10" << std::setw(16)
-              << registers["r10"] << "R11" << std::setw(16) << registers["r11"]
+    std::cout << std::hex << "RAX   " << std::setw(16) << std::left
+              << *(registers["rax"]) << " RBX   " << std::setw(16) << std::left
+              << *(registers["rbx"]) << " RCX   " << std::setw(16) << std::left
+              << *(registers["rcx"]) << " RDX   " << std::setw(16) << std::left
+              << *(registers["rdx"]) << "\n"
+              << "R8    " << std::setw(16) << std::left << *(registers["r8"])
+              << " R9    " << std::setw(16) << std::left << *(registers["r9"])
+              << " R10   " << std::setw(16) << std::left << *(registers["r10"])
+              << " R11   " << std::setw(16) << std::left << *(registers["r11"])
               << "\n"
-              << "R12" << std::setw(16) << registers["r12"] << "R13"
-              << std::setw(16) << registers["r13"] << "R14" << std::setw(16)
-              << registers["r14"] << "R15" << std::setw(16) << registers["r15"]
+              << "R12   " << std::setw(16) << std::left << *(registers["r12"])
+              << " R13   " << std::setw(16) << std::left << *(registers["r13"])
+              << " R14   " << std::setw(16) << std::left << *(registers["r14"])
+              << " R15   " << std::setw(16) << std::left << *(registers["r15"])
               << "\n"
-              << "RDI" << std::setw(16) << registers["rdi"] << "RSI"
-              << std::setw(16) << registers["rsi"] << "RBP" << std::setw(16)
-              << registers["rbp"] << "RSP" << std::setw(16) << registers["rsp"]
+              << "RDI   " << std::setw(16) << std::left << *(registers["rdi"])
+              << " RSI   " << std::setw(16) << std::left << *(registers["rsi"])
+              << " RBP   " << std::setw(16) << std::left << *(registers["rbp"])
+              << " RSP   " << std::setw(16) << std::left << *(registers["rsp"])
               << "\n"
-              << "RIP" << std::setw(16) << registers["rip"] << "FLAGS"
-              << std::setw(16) << registers["eflags"] << std::endl;
+              << "RIP   " << std::setw(16) << std::left << *(registers["rip"])
+              << " FLAGS " << std::setw(16) << std::right << std::setfill('0')
+              << *(registers["eflags"]) << std::endl;
 }
 
 // Function for fetching all registers and providing them to
@@ -337,7 +335,45 @@ void Debugger::run_the_program() {
 }
 
 // Function for showing the memory layout of the running program
-void Debugger::show_memory_layout() {}
+void Debugger::show_memory_layout() {
+    if (this->state != State::running) {
+        std::cout << "** Program " << this->program_name << " is not running"
+                  << std::endl;
+        return;
+    }
+
+    std::ifstream ifs{"/proc/" + std::to_string(this->child) + "/maps"};
+    while (ifs.good()) {
+        std::string line{};
+        std::getline(ifs, line);
+        std::vector<std::string> tokens{tokenize(line)};
+
+        if (tokens.size() >= 6) {
+            std::string first{}, second{};
+            bool found_dash{false};
+            for (auto& ch : tokens[0]) {
+                if (ch == '-')
+                    found_dash = true;
+                else if (!found_dash)
+                    first.push_back(ch);
+                else
+                    second.push_back(ch);
+            }
+
+            int length = first.length();
+            for (int dummy{0}; dummy < 16 - length; dummy++)
+                first = "0" + first;
+            length = second.length();
+            for (int dummy{0}; dummy < 16 - length; dummy++)
+                second = "0" + second;
+
+            long long field{std::stoll(tokens[2])};
+            std::cout << first << "-" << second << " " << tokens[1] << " "
+                      << field << "\t" << tokens[5] << std::endl;
+        }
+    }
+    ifs.close();
+}
 
 // Function for running a single instruction and stepping into the function call
 void Debugger::run_a_single_instruction() {}
