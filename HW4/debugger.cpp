@@ -4,8 +4,11 @@ Debugger::Debugger() { this->setup_handler_table(); }
 
 Debugger::Debugger(const std::string& program_name) {
     this->setup_handler_table();
-    this->command = {"load", program_name};
-    this->handlers["load"]();
+
+    if (!program_name.empty()) {
+        this->command = {"load", program_name};
+        this->handlers["load"]();
+    }
 }
 
 // Function for starting the debugger
