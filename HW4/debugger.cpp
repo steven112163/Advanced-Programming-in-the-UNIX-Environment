@@ -94,6 +94,7 @@ void Debugger::command_handler() {
     std::stringstream ss(raw_command);
 
     // Split the raw command by spaces
+    this->command.clear();
     std::string word{};
     while (ss >> word) {
         this->command.push_back(word);
@@ -107,9 +108,6 @@ void Debugger::command_handler() {
     else
         std::cout << "** Unknown command: \"" << this->command[0]
                   << "\". Try \"help\"" << std::endl;
-
-    // Clear the command
-    this->command.clear();
 }
 
 // Function for setting a breakpoint at the user-typed address
@@ -140,7 +138,7 @@ void Debugger::get_a_register() {
         return;
     }
 
-    if (!this->running) {
+    if (this->state == State::running) {
         std::cout << "** The program is not running." << std::endl;
         return;
     }
@@ -165,7 +163,7 @@ void Debugger::set_a_register() {
         return;
     }
 
-    if (!this->running) {
+    if (this->state == State::running) {
         std::cout << "** The program is not running." << std::endl;
         return;
     }
@@ -183,7 +181,7 @@ void Debugger::get_all_registers() {
         return;
     }
 
-    if (!this->running) {
+    if (this->state != State::running) {
         std::cout << "** The program is not running." << std::endl;
         return;
     }
@@ -277,7 +275,7 @@ void Debugger::help() {
 
 // Function for loading the user-typed program and executing it
 void Debugger::load_a_program() {
-    if (this->loaded) {
+    if (this->state == State::loaded) {
         // The program is already loaded
         // TODO: Show the entry address
         return;
@@ -307,21 +305,36 @@ void Debugger::load_a_program() {
     } else {
         // Tracer
         if (waitpid(this->child, &this->wait_status, 0) < 0) {
-            perror("** Wait");
+            perror("** Wait (after fork)");
             this->quit_from_the_debugger();
             return;
         }
 
         ptrace(PTRACE_SETOPTIONS, this->child, 0, PTRACE_O_EXITKILL);
+        this->program_name = this->command[1];
 
         // TODO: show the entry address
     }
 
-    this->loaded = true;
+    this->state = State::loaded;
 }
 
 // Function for running the program
-void Debugger::run_the_program() {}
+void Debugger::run_the_program() {
+    if (this->state == State::running) {
+        std::cout << "** Program " << this->program_name
+                  << " is already running" << std::endl;
+        return;
+    }
+
+    if (this->state == State::loaded) {
+        this->start_the_program();
+        return;
+    }
+
+    std::cout << "** \"run\" is for state loaded and running only."
+              << std::endl;
+}
 
 // Function for showing the memory layout of the running program
 void Debugger::show_memory_layout() {}
@@ -330,4 +343,18 @@ void Debugger::show_memory_layout() {}
 void Debugger::run_a_single_instruction() {}
 
 // Function for starting the program and stopping at the first instruction
-void Debugger::start_the_program() {}
+void Debugger::start_the_program() {
+    if (this->state == State::running) {
+        std::cout << "** Program " << this->program_name
+                  << " is already running" << std::endl;
+        return;
+    }
+
+    if (this->state == State::init) {
+        std::cout << "** The program is not loaded." << std::endl;
+        return;
+    }
+
+    std::cout << "** PID " << this->child << std::endl;
+    this->state = State::running;
+}

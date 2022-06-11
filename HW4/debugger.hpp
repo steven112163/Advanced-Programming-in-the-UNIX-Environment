@@ -14,6 +14,12 @@
 #include <unordered_map>
 #include <vector>
 
+enum State {
+    init,
+    loaded,
+    running
+};
+
 // Class representing a Simplified Scriptable Instruction Level Debugger
 // Example:
 //      Debugger debugger{};
@@ -45,17 +51,17 @@ class Debugger {
     // Flag for determining whether we should stop the debugger
     bool stop{false};
 
-    // Flag for checking whether program is loaded
-    bool loaded{false};
-
-    // Flag for checking whether program is running
-    bool running{false};
+    // State for representing the debugger state
+    State state{State::init};
 
     // PID for indicating the forked child
     pid_t child{};
 
     // Flag for indicating the status of the tracee
     int wait_status{};
+
+    // String for indicating the current program
+    std::string program_name{};
 
     // Function for setting up the handler table
     void setup_handler_table();
