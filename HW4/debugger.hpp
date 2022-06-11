@@ -17,14 +17,7 @@
 
 enum State { init, loaded, running };
 
-std::vector<std::string> tokenize(const std::string& sentence) {
-    std::vector<std::string> tokens{};
-    std::stringstream ss(sentence);
-    std::string word{};
-    while (ss >> word) tokens.push_back(word);
-
-    return tokens;
-}
+std::vector<std::string> tokenize(const std::string& sentence);
 
 // Class representing a Simplified Scriptable Instruction Level Debugger
 // Example:
@@ -53,6 +46,9 @@ class Debugger {
 
     // Struct for containing the tracee's registers
     struct user_regs_struct regs {};
+
+    // Variable for holding the entry address
+    long long int entry_address{};
 
     // Flag for determining whether we should stop the debugger
     bool stop{false};

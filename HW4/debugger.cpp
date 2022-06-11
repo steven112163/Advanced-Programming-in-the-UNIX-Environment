@@ -1,5 +1,14 @@
 #include <debugger.hpp>
 
+std::vector<std::string> tokenize(const std::string& sentence) {
+    std::vector<std::string> tokens{};
+    std::stringstream ss(sentence);
+    std::string word{};
+    while (ss >> word) tokens.push_back(word);
+
+    return tokens;
+}
+
 Debugger::Debugger() { this->setup_handler_table(); }
 
 Debugger::Debugger(const std::string& program_name) {
@@ -145,6 +154,8 @@ void Debugger::get_a_register() {
     else
         std::cout << "** Unknown register: \"" << this->command[1] << "\""
                   << std::endl;
+
+    // Undo io manipulation
     std::cout.copyfmt(std::ios(NULL));
 
     return;
@@ -277,9 +288,14 @@ void Debugger::help() {
 
 // Function for loading the user-typed program and executing it
 void Debugger::load_a_program() {
-    if (this->state == State::loaded) {
+    if (this->state != State::init) {
         // The program is already loaded
-        // TODO: Show the entry address
+        std::cout << "** Program \"" << this->program_name
+                  << "\" has been loaded. Entry point 0x" << std::hex
+                  << this->entry_address << std::endl;
+
+        // Undo io manipulation
+        std::cout.copyfmt(std::ios(NULL));
         return;
     }
 
@@ -304,28 +320,41 @@ void Debugger::load_a_program() {
         // Shouldn't reach here
         perror("** Exec");
         this->quit_from_the_debugger();
-    } else {
-        // Tracer
-        if (waitpid(this->child, &this->wait_status, 0) < 0) {
-            perror("** Wait (after fork)");
-            this->quit_from_the_debugger();
-            return;
-        }
-
-        ptrace(PTRACE_SETOPTIONS, this->child, 0, PTRACE_O_EXITKILL);
-        this->program_name = this->command[1];
-
-        // TODO: show the entry address
     }
 
+    // Tracer
+    if (waitpid(this->child, &this->wait_status, 0) < 0) {
+        perror("** Wait (after fork)");
+        this->quit_from_the_debugger();
+        return;
+    }
+
+    if (!WIFSTOPPED(this->wait_status)) {
+        std::cout << "** Tracee is not stopped." << std::endl;
+        this->quit_from_the_debugger();
+        return;
+    }
+
+    ptrace(PTRACE_SETOPTIONS, this->child, 0, PTRACE_O_EXITKILL);
+    this->program_name = this->command[1];
+    std::unordered_map<std::string, unsigned long long int*> registers{
+        this->fetch_registers()};
+    this->entry_address = *(registers["rip"]);
+    std::cout << "** Program \"" << this->program_name
+              << "\" loaded. Entry point 0x" << std::hex << this->entry_address
+              << std::endl;
+
     this->state = State::loaded;
+
+    // Undo io manipulation
+    std::cout.copyfmt(std::ios(NULL));
 }
 
 // Function for running the program
 void Debugger::run_the_program() {
     if (this->state == State::running) {
-        std::cout << "** Program " << this->program_name
-                  << " is already running" << std::endl;
+        std::cout << "** Program \"" << this->program_name
+                  << "\" is already running" << std::endl;
         return;
     }
 
@@ -341,7 +370,7 @@ void Debugger::run_the_program() {
 // Function for showing the memory layout of the running program
 void Debugger::show_memory_layout() {
     if (this->state != State::running) {
-        std::cout << "** Program " << this->program_name << " is not running"
+        std::cout << "** Program \"" << this->program_name << "\" is not running"
                   << std::endl;
         return;
     }
@@ -376,6 +405,8 @@ void Debugger::show_memory_layout() {
                       << std::setw(16) << std::setfill('0') << second << " "
                       << tokens[1] << " " << field << "\t" << tokens[5]
                       << std::endl;
+
+            // Undo io manipulation
             std::cout.copyfmt(std::ios(NULL));
         }
     }
@@ -388,8 +419,8 @@ void Debugger::run_a_single_instruction() {}
 // Function for starting the program and stopping at the first instruction
 void Debugger::start_the_program() {
     if (this->state == State::running) {
-        std::cout << "** Program " << this->program_name
-                  << " is already running" << std::endl;
+        std::cout << "** Program \"" << this->program_name
+                  << "\" is already running" << std::endl;
         return;
     }
 
