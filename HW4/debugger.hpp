@@ -68,6 +68,12 @@ class Debugger {
     // Function for setting up the handler table
     void setup_handler_table();
 
+    // Function for checking whether the tracee is stopped
+    bool is_stopped();
+
+    // Function for checking whether current state is running
+    bool is_running();
+
     // Function for printing sdb> prompt
     void print_prompt();
 
@@ -90,7 +96,7 @@ class Debugger {
     // Function for disassembling 10 instructions at the user-typed address
     void disassemble_instructions();
 
-    // Function for dumping the memory content up to 80 bytes from the program
+    // Function for dumping 80 bytes of the memory content from the program
     void dump_the_memory();
 
     // Function for cleaning up the debugger and exiting

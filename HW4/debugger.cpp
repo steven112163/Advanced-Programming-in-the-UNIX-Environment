@@ -91,6 +91,32 @@ void Debugger::setup_handler_table() {
     this->handlers["start"] = std::bind(&Debugger::start_the_program, this);
 }
 
+// Function for checking whether the tracee is stopped
+bool Debugger::is_stopped() {
+    if (!WIFSTOPPED(this->wait_status)) {
+        std::cerr << "** Tracee is not stopped!" << std::endl;
+        this->quit_from_the_debugger();
+        return false;
+    }
+    return true;
+}
+
+// Function for checking whether current state is running
+bool Debugger::is_running() {
+    if (this->state == State::init) {
+        std::cout << "** The program is not loaded." << std::endl;
+        return false;
+    }
+
+    if (this->state == State::loaded) {
+        std::cout << "** The program \"" << this->program_name
+                  << "\" is not running." << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
 // Function for printing sdb> prompt
 void Debugger::print_prompt() { std::cout << "sdb> "; }
 
@@ -127,23 +153,50 @@ void Debugger::continue_the_execution() {}
 // Function for disassembling 10 instructions at the user-typed address
 void Debugger::disassemble_instructions() {}
 
-// Function for dumping the memory content up to 80 bytes from the program
-void Debugger::dump_the_memory() {}
+// Function for dumping 80 bytes of the memory content from the program
+void Debugger::dump_the_memory() {
+    if (!this->is_stopped()) return;
+
+    if (!this->is_running()) return;
+
+    if (this->command.size() < 2) {
+        std::cout << "** No address is given." << std::endl;
+        return;
+    }
+
+    unsigned long long address{std::stoull(this->command[1], 0, 16)};
+
+    for (int line{0}; line < 80 / 16; line++) {
+        std::string memory{};
+        for (int word{0}; word < 2; word++) {
+            long mem = ptrace(PTRACE_PEEKTEXT, this->child, address, 0);
+            memory += std::string((char*)&mem, 8);
+            address += 8;
+        }
+
+        std::cout << std::setw(12) << std::hex << address - 16 << ":";
+        for (const unsigned char& ch : memory) {
+            std::cout << " " << std::setfill('0') << std::setw(2) << +ch;
+        }
+        std::cout << "  |";
+        for (const auto& ch : memory) {
+            std::cout << (std::isprint(ch) ? ch : '.');
+        }
+        std::cout << "|" << std::endl;
+
+        // Undo io manipulation
+        std::cout.copyfmt(std::ios(NULL));
+    }
+}
 
 // Function for cleaning up the debugger and exiting
 void Debugger::quit_from_the_debugger() { this->stop = true; }
 
 // Function for getting the value of a register from the program
 void Debugger::get_a_register() {
-    if (!WIFSTOPPED(this->wait_status)) {
-        this->quit_from_the_debugger();
-        return;
-    }
+    if (!this->is_stopped()) return;
 
-    if (this->state != State::running) {
-        std::cout << "** The program is not running." << std::endl;
-        return;
-    }
+    if (!this->is_running()) return;
 
     std::unordered_map<std::string, unsigned long long int*> registers{
         this->fetch_registers()};
@@ -163,15 +216,9 @@ void Debugger::get_a_register() {
 
 // Function for setting the value of a register in the program
 void Debugger::set_a_register() {
-    if (!WIFSTOPPED(this->wait_status)) {
-        this->quit_from_the_debugger();
-        return;
-    }
+    if (!this->is_stopped()) return;
 
-    if (this->state != State::running) {
-        std::cout << "** The program is not running." << std::endl;
-        return;
-    }
+    if (!this->is_running()) return;
 
     std::unordered_map<std::string, unsigned long long int*> registers{
         this->fetch_registers()};
@@ -181,15 +228,9 @@ void Debugger::set_a_register() {
 
 // Function for getting values of all registers from the program
 void Debugger::get_all_registers() {
-    if (!WIFSTOPPED(this->wait_status)) {
-        this->quit_from_the_debugger();
-        return;
-    }
+    if (!this->is_stopped()) return;
 
-    if (this->state != State::running) {
-        std::cout << "** The program is not running." << std::endl;
-        return;
-    }
+    if (!this->is_running()) return;
 
     std::unordered_map<std::string, unsigned long long int*> registers{
         this->fetch_registers()};
@@ -329,11 +370,7 @@ void Debugger::load_a_program() {
         return;
     }
 
-    if (!WIFSTOPPED(this->wait_status)) {
-        std::cout << "** Tracee is not stopped." << std::endl;
-        this->quit_from_the_debugger();
-        return;
-    }
+    if (!this->is_stopped()) return;
 
     ptrace(PTRACE_SETOPTIONS, this->child, 0, PTRACE_O_EXITKILL);
     this->program_name = this->command[1];
@@ -369,11 +406,7 @@ void Debugger::run_the_program() {
 
 // Function for showing the memory layout of the running program
 void Debugger::show_memory_layout() {
-    if (this->state != State::running) {
-        std::cout << "** Program \"" << this->program_name << "\" is not running"
-                  << std::endl;
-        return;
-    }
+    if (!this->is_running()) return;
 
     std::ifstream ifs{"/proc/" + std::to_string(this->child) + "/maps"};
     while (ifs.good()) {
@@ -393,13 +426,6 @@ void Debugger::show_memory_layout() {
                     second.push_back(ch);
             }
 
-            int length = first.length();
-            for (int dummy{0}; dummy < 16 - length; dummy++)
-                first = "0" + first;
-            length = second.length();
-            for (int dummy{0}; dummy < 16 - length; dummy++)
-                second = "0" + second;
-
             long long field{std::stoll(tokens[2])};
             std::cout << std::setw(16) << std::setfill('0') << first << "-"
                       << std::setw(16) << std::setfill('0') << second << " "
@@ -414,7 +440,13 @@ void Debugger::show_memory_layout() {
 }
 
 // Function for running a single instruction and stepping into the function call
-void Debugger::run_a_single_instruction() {}
+void Debugger::run_a_single_instruction() {
+    if (!this->is_stopped()) return;
+
+    if (!this->is_running()) return;
+
+    ptrace(PTRACE_SINGLESTEP, this->child, 0, 0);
+}
 
 // Function for starting the program and stopping at the first instruction
 void Debugger::start_the_program() {
