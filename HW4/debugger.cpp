@@ -139,13 +139,55 @@ void Debugger::command_handler() {
 }
 
 // Function for setting a breakpoint at the user-typed address
-void Debugger::set_a_breakpoint() {}
+void Debugger::set_a_breakpoint() {
+    if (!this->is_stopped()) return;
+
+    if (!this->is_running()) return;
+
+    unsigned long long address{std::stoull(this->command[1], 0, 16)};
+
+    long mem = ptrace(PTRACE_PEEKTEXT, this->child, address, 0);
+    Breakpoint breakpoint{this->breakpoint_id++, address, (unsigned char)mem};
+    this->address_to_breakpoint[breakpoint.address] =
+        this->id_to_breakpoint[breakpoint.id] = breakpoint;
+
+    ptrace(PTRACE_POKETEXT, this->child, address,
+           (mem & 0xffffffffffffff00) | 0xcc);
+}
 
 // Function for deleting the breakpoint at the user-typed address
-void Debugger::delete_a_breakpoint() {}
+void Debugger::delete_a_breakpoint() {
+    if (!this->is_stopped()) return;
+
+    if (!this->is_running()) return;
+
+    unsigned long id{std::stoul(this->command[1])};
+
+    auto it{this->id_to_breakpoint.find(id)};
+    if (it == this->id_to_breakpoint.end()) {
+        std::cout << "** No such breakpoint ID." << std::endl;
+        return;
+    }
+
+    Breakpoint breakpoint{it->second};
+    long mem = ptrace(PTRACE_PEEKTEXT, this->child, breakpoint.address, 0);
+    ptrace(PTRACE_POKETEXT, this->child, breakpoint.address,
+           (mem & 0xffffffffffffff00) | breakpoint.original_instruction);
+    this->id_to_breakpoint.erase(id);
+
+    std::cout << "** Breakpoint " << id << " deleted." << std::endl;
+}
 
 // Function for listing all breakpoints set by the user
-void Debugger::list_all_breakpoints() {}
+void Debugger::list_all_breakpoints() {
+    for (const auto& [id, breakpoint] : this->id_to_breakpoint) {
+        std::cout << std::setw(3) << id << ": " << std::setw(8) << std::hex
+                  << breakpoint.address << std::endl;
+
+        // Undo io manipulation
+        std::cout.copyfmt(std::ios(NULL));
+    }
+}
 
 // Function for continuing the program execution
 void Debugger::continue_the_execution() {}

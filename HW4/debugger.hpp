@@ -10,12 +10,19 @@
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 enum State { init, loaded, running };
+
+struct Breakpoint {
+    unsigned long id;
+    unsigned long long address;
+    unsigned char original_instruction;
+};
 
 std::vector<std::string> tokenize(const std::string& sentence);
 
@@ -35,8 +42,14 @@ class Debugger {
     void debug();
 
    private:
-    // Table for containing all breakpoints
-    std::vector<std::string> breakpoints{};
+    // Counter for representing the current breakpoint ID
+    unsigned long breakpoint_id{0};
+
+    // Table for mapping the ID to the corresponding breakpoint
+    std::map<unsigned int, Breakpoint> id_to_breakpoint{};
+
+    // Table for mapping the address to the corresponding breakpoint
+    std::unordered_map<unsigned long long, Breakpoint> address_to_breakpoint{};
 
     // Vector for containing user command split by spaces
     std::vector<std::string> command{};
