@@ -1,4 +1,5 @@
 #include <capstone/capstone.h>
+#include <elf.h>
 #include <sys/ptrace.h>
 #include <sys/user.h>
 #include <sys/wait.h>
@@ -6,6 +7,7 @@
 
 #include <cinttypes>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <functional>
 #include <iomanip>
@@ -61,7 +63,10 @@ class Debugger {
     struct user_regs_struct regs {};
 
     // Variable for holding the entry address
-    long long int entry_address{};
+    unsigned long long int entry_address{};
+
+    // Variable for holding the end address
+    unsigned long long int end_address{};
 
     // Flag for determining whether we should stop the debugger
     bool stop{false};
@@ -102,6 +107,10 @@ class Debugger {
 
     // Function for listing all breakpoints set by the user
     void list_all_breakpoints();
+
+    // Function for checking whether the tracee reaches a breakpoint when it's
+    // stopped
+    void check_breakpoint();
 
     // Function for continuing the program execution
     void continue_the_execution();

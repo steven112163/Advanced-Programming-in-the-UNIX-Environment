@@ -144,6 +144,11 @@ void Debugger::set_a_breakpoint() {
 
     if (!this->is_running()) return;
 
+    if (this->command.size() < 2) {
+        std::cout << "** No address is given." << std::endl;
+        return;
+    }
+
     unsigned long long address{std::stoull(this->command[1], 0, 16)};
 
     long mem = ptrace(PTRACE_PEEKTEXT, this->child, address, 0);
@@ -160,6 +165,11 @@ void Debugger::delete_a_breakpoint() {
     if (!this->is_stopped()) return;
 
     if (!this->is_running()) return;
+
+    if (this->command.size() < 2) {
+        std::cout << "** No breakpoint ID is given." << std::endl;
+        return;
+    }
 
     unsigned long id{std::stoul(this->command[1])};
 
@@ -189,11 +199,85 @@ void Debugger::list_all_breakpoints() {
     }
 }
 
+// Function for checking whether the tracee reaches a breakpoint when it's
+// stopped
+void Debugger::check_breakpoint() {}
+
 // Function for continuing the program execution
-void Debugger::continue_the_execution() {}
+void Debugger::continue_the_execution() {
+    if (!this->is_stopped()) return;
+
+    if (!this->is_running()) return;
+
+    ptrace(PTRACE_CONT, this->child, 0, 0);
+
+    this->check_breakpoint();
+}
 
 // Function for disassembling 10 instructions at the user-typed address
-void Debugger::disassemble_instructions() {}
+void Debugger::disassemble_instructions() {
+    if (!this->is_stopped()) return;
+
+    if (!this->is_running()) return;
+
+    if (this->command.size() < 2) {
+        std::cout << "** No address is given." << std::endl;
+        return;
+    }
+
+    unsigned long long address{std::stoull(this->command[1], 0, 16)};
+
+    long instructions[10];
+    for (int inst_id{0}; inst_id < 10; inst_id++) {
+        long mem =
+            ptrace(PTRACE_PEEKTEXT, this->child, address + inst_id * 8, 0);
+
+        instructions[inst_id] = mem;
+        unsigned char* bytes = (unsigned char*)&(instructions[inst_id]);
+        for (int byte_id{0}; byte_id < 8; byte_id++) {
+            if (bytes[byte_id] == 0xcc) {
+                auto it{this->address_to_breakpoint.find(address + inst_id * 8 +
+                                                         byte_id)};
+                if (it == this->address_to_breakpoint.end()) continue;
+                bytes[byte_id] = (it->second).original_instruction;
+            }
+        }
+    }
+
+    csh handle;
+    if (cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK) {
+        perror("Failed opening capstone");
+        return;
+    }
+    cs_insn* insn;
+    size_t count = cs_disasm(handle, (uint8_t*)instructions,
+                             sizeof(instructions), address, 10, &insn);
+    if (count > 0) {
+        for (size_t idx{0}; idx < count; idx++) {
+            if (insn[idx].address > this->end_address) {
+                std::cout
+                    << "** The address is out of the range of the text segment."
+                    << std::endl;
+                break;
+            }
+            std::cout << std::hex << std::setw(12) << std::right
+                      << insn[idx].address << ":";
+            std::stringstream ss;
+            for (int byte_idx{0}; byte_idx < insn[idx].size; byte_idx++) {
+                ss << " " << std::setw(2) << std::right << std::setfill('0')
+                   << std::hex << (unsigned int)insn[idx].bytes[byte_idx];
+            }
+            std::cout << std::setw(24) << std::left << ss.str() << std::setw(5)
+                      << std::left << insn[idx].mnemonic << " "
+                      << insn[idx].op_str << std::endl;
+
+            // Undo io manipulation
+            std::cout.copyfmt(std::ios(NULL));
+        }
+        cs_free(insn, count);
+    }
+    cs_close(&handle);
+}
 
 // Function for dumping 80 bytes of the memory content from the program
 void Debugger::dump_the_memory() {
@@ -240,6 +324,11 @@ void Debugger::get_a_register() {
 
     if (!this->is_running()) return;
 
+    if (this->command.size() < 2) {
+        std::cout << "** No register is given." << std::endl;
+        return;
+    }
+
     std::unordered_map<std::string, unsigned long long int*> registers{
         this->fetch_registers()};
     auto it = registers.find(this->command[1]);
@@ -261,6 +350,11 @@ void Debugger::set_a_register() {
     if (!this->is_stopped()) return;
 
     if (!this->is_running()) return;
+
+    if (this->command.size() < 3) {
+        std::cout << "** No register or value is given." << std::endl;
+        return;
+    }
 
     std::unordered_map<std::string, unsigned long long int*> registers{
         this->fetch_registers()};
@@ -382,6 +476,11 @@ void Debugger::load_a_program() {
         return;
     }
 
+    if (this->command.size() < 2) {
+        std::cout << "** No program is given." << std::endl;
+        return;
+    }
+
     // Fork the tracee
     if ((this->child = fork()) < 0) {
         perror("** Fork");
@@ -416,17 +515,51 @@ void Debugger::load_a_program() {
 
     ptrace(PTRACE_SETOPTIONS, this->child, 0, PTRACE_O_EXITKILL);
     this->program_name = this->command[1];
-    std::unordered_map<std::string, unsigned long long int*> registers{
-        this->fetch_registers()};
-    this->entry_address = *(registers["rip"]);
-    std::cout << "** Program \"" << this->program_name
-              << "\" loaded. Entry point 0x" << std::hex << this->entry_address
-              << std::endl;
 
-    this->state = State::loaded;
+    // Read ELF and section headers to get the addresses of entry and end of
+    // .text
+    FILE* file = fopen(this->program_name.c_str(), "r");
+    Elf64_Ehdr elf_header{};
+    Elf64_Shdr* sh_table{};
+    size_t dummy{};
+    dummy++;
+
+    fseek(file, 0, SEEK_SET);
+    dummy = fread(&elf_header, sizeof(Elf64_Ehdr), 1, file);
+    sh_table = (Elf64_Shdr*)malloc(elf_header.e_shentsize * elf_header.e_shnum);
+
+    this->entry_address = elf_header.e_entry;
+
+    fseek(file, elf_header.e_shoff, SEEK_SET);
+    dummy =
+        fread(sh_table, elf_header.e_shentsize * elf_header.e_shnum, 1, file);
+
+    char* sh_str = (char*)malloc(sh_table[elf_header.e_shstrndx].sh_size);
+
+    if (sh_str != NULL) {
+        fseek(file, sh_table[elf_header.e_shstrndx].sh_offset, SEEK_SET);
+        dummy = fread(sh_str, sh_table[elf_header.e_shstrndx].sh_size, 1, file);
+    }
+
+    for (int idx{0}; idx < elf_header.e_shnum; idx++) {
+        if (!strcmp(".text", (sh_str + sh_table[idx].sh_name))) {
+            this->end_address = (unsigned long long)sh_table[idx].sh_addr +
+                                sh_table[idx].sh_size - 1;
+            break;
+        }
+    }
+
+    free(sh_table);
+    free(sh_str);
+    fclose(file);
 
     // Undo io manipulation
     std::cout.copyfmt(std::ios(NULL));
+
+    std::cout << "** Program \"" << this->program_name
+              << "\" loaded. Entry point 0x" << std::hex << this->entry_address
+              << std::endl;
+    this->state = State::loaded;
 }
 
 // Function for running the program
@@ -434,6 +567,7 @@ void Debugger::run_the_program() {
     if (this->state == State::running) {
         std::cout << "** Program \"" << this->program_name
                   << "\" is already running" << std::endl;
+        this->continue_the_execution();
         return;
     }
 
