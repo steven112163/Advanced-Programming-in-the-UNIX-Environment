@@ -149,8 +149,15 @@ void Debugger::set_a_breakpoint() {
         return;
     }
 
-    unsigned long long address{std::stoull(this->command[1], 0, 16)};
+    ull address{this->to_ull(this->command[1])};
 
+    if (!(this->entry_address < address && address <= this->end_address)) {
+        std::cout << "** The given address is invalid." << std::endl;
+        return;
+    }
+
+    // Record the original instruction and change the byte at the given address
+    // to 0xcc
     long mem = ptrace(PTRACE_PEEKTEXT, this->child, address, 0);
     Breakpoint breakpoint{this->breakpoint_id++, address, (unsigned char)mem};
     this->address_to_breakpoint[breakpoint.address] =
@@ -171,14 +178,16 @@ void Debugger::delete_a_breakpoint() {
         return;
     }
 
-    unsigned long id{std::stoul(this->command[1])};
+    ull id{this->to_ull(this->command[1])};
 
+    // Check if the given ID exists
     auto it{this->id_to_breakpoint.find(id)};
     if (it == this->id_to_breakpoint.end()) {
         std::cout << "** No such breakpoint ID." << std::endl;
         return;
     }
 
+    // Change the instruction back to its original byte
     Breakpoint breakpoint{it->second};
     long mem = ptrace(PTRACE_PEEKTEXT, this->child, breakpoint.address, 0);
     ptrace(PTRACE_POKETEXT, this->child, breakpoint.address,
@@ -201,15 +210,114 @@ void Debugger::list_all_breakpoints() {
 
 // Function for checking whether the tracee reaches a breakpoint when it's
 // stopped
-void Debugger::check_breakpoint() {}
+void Debugger::check_breakpoint() {
+    if (WIFSTOPPED(this->wait_status)) {
+        if (WSTOPSIG(this->wait_status) != SIGTRAP) {
+            std::cout << "** Child process stopped by a signal (code "
+                      << WSTOPSIG(this->wait_status) << ")" << std::endl;
+            this->quit_from_the_debugger();
+            return;
+        }
+
+        // Check if the tracee is stopped by 0xcc
+        std::unordered_map<std::string, ull*> registers{
+            this->fetch_registers()};
+        long mem =
+            ptrace(PTRACE_PEEKTEXT, this->child, *(registers["rip"]) - 1, 0);
+        unsigned char* inst = (unsigned char*)&mem;
+        if (inst[0] == 0xcc) {
+            // Return if the interruption is not set by the user
+            auto it = this->address_to_breakpoint.find(*(registers["rip"]) - 1);
+            if (it == this->address_to_breakpoint.end()) return;
+
+            // Decrement the register RIP and write it back
+            *(registers["rip"]) -= 1;
+            ptrace(PTRACE_SETREGS, this->child, 0, &this->regs);
+
+            // Change the retrieved breakpoint back to its original instruction
+            inst[0] = (it->second).original_instruction;
+
+            // Print the original stopped instruction
+            std::cout << "** Breakpoint @";
+
+            csh handle;
+            if (cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK) {
+                perror("** Failed opening capstone");
+                return;
+            }
+            cs_insn* insn;
+
+            size_t count = cs_disasm(handle, (uint8_t*)&mem, sizeof(mem),
+                                     *(registers["rip"]), 1, &insn);
+            if (count > 0) {
+                std::cout << std::setw(12) << std::right << std::hex
+                          << insn[0].address << ":";
+                std::stringstream ss;
+                for (int i = 0; i < insn[0].size; ++i) {
+                    ss << " " << std::setw(2) << std::right << std::setfill('0')
+                       << std::hex << (unsigned int)insn[0].bytes[i];
+                }
+
+                std::cout << std::left << ss.str() << "\t\t\t"
+                          << insn[0].mnemonic << "\t" << insn[0].op_str
+                          << std::endl;
+
+                // Undo io manipulation
+                std::cout.copyfmt(std::ios(NULL));
+            }
+            cs_free(insn, count);
+            cs_close(&handle);
+        }
+    }
+
+    if (WIFEXITED(this->wait_status)) {
+        std::cout << "** Child process " << this->child
+                  << " terminiated normally (code "
+                  << WEXITSTATUS(this->wait_status) << ")" << std::endl;
+    }
+}
+
+// Function for running the stopped instruction and write 0xcc back to the
+// breakpoint
+void Debugger::run_breakpoint() {
+    if (!this->is_stopped()) return;
+
+    // Get the stopped instruction
+    std::unordered_map<std::string, ull*> registers{this->fetch_registers()};
+    long mem = ptrace(PTRACE_PEEKTEXT, this->child, *(registers["rip"]), 0);
+    unsigned char* inst = (unsigned char*)&mem;
+
+    if (inst[0] == 0xcc) {
+        // Return if the interruption is not set by the user
+        auto it = this->address_to_breakpoint.find(*(registers["rip"]));
+        if (it == this->address_to_breakpoint.end()) return;
+
+        // Change the breakpoint back to its original instruction
+        inst[0] = (it->second).original_instruction;
+        ptrace(PTRACE_POKETEXT, this->child, *(registers["rip"]), mem);
+
+        // Run the stopped instruction
+        ptrace(PTRACE_SINGLESTEP, this->child, 0, 0);
+        waitpid(this->child, &this->wait_status, 0);
+        if (!this->is_stopped()) return;
+
+        // Change the breakpoint to 0xcc
+        ptrace(PTRACE_POKETEXT, this->child, *(registers["rip"]),
+               (mem & 0xffffffffffffff00) | 0xcc);
+    }
+
+    return;
+}
 
 // Function for continuing the program execution
 void Debugger::continue_the_execution() {
-    if (!this->is_stopped()) return;
-
     if (!this->is_running()) return;
 
+    this->run_breakpoint();
+    if (!this->is_stopped()) return;
+
     ptrace(PTRACE_CONT, this->child, 0, 0);
+    waitpid(this->child, &this->wait_status, 0);
 
     this->check_breakpoint();
 }
@@ -225,8 +333,9 @@ void Debugger::disassemble_instructions() {
         return;
     }
 
-    unsigned long long address{std::stoull(this->command[1], 0, 16)};
+    ull address{this->to_ull(this->command[1])};
 
+    // Extract ten instructions from the given address
     long instructions[10];
     for (int inst_id{0}; inst_id < 10; inst_id++) {
         long mem =
@@ -235,6 +344,8 @@ void Debugger::disassemble_instructions() {
         instructions[inst_id] = mem;
         unsigned char* bytes = (unsigned char*)&(instructions[inst_id]);
         for (int byte_id{0}; byte_id < 8; byte_id++) {
+            // If the byte is 0xcc, we need to change it back to its original
+            // instruction
             if (bytes[byte_id] == 0xcc) {
                 auto it{this->address_to_breakpoint.find(address + inst_id * 8 +
                                                          byte_id)};
@@ -244,9 +355,10 @@ void Debugger::disassemble_instructions() {
         }
     }
 
+    // Use capstone to translate the bytes into human-readable instructions
     csh handle;
     if (cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK) {
-        perror("Failed opening capstone");
+        perror("** Failed opening capstone");
         return;
     }
     cs_insn* insn;
@@ -290,7 +402,7 @@ void Debugger::dump_the_memory() {
         return;
     }
 
-    unsigned long long address{std::stoull(this->command[1], 0, 16)};
+    ull address{this->to_ull(this->command[1])};
 
     for (int line{0}; line < 80 / 16; line++) {
         std::string memory{};
@@ -329,8 +441,7 @@ void Debugger::get_a_register() {
         return;
     }
 
-    std::unordered_map<std::string, unsigned long long int*> registers{
-        this->fetch_registers()};
+    std::unordered_map<std::string, ull*> registers{this->fetch_registers()};
     auto it = registers.find(this->command[1]);
     if (it != registers.end())
         std::cout << this->command[1] << " = " << std::dec << *(it->second)
@@ -341,8 +452,6 @@ void Debugger::get_a_register() {
 
     // Undo io manipulation
     std::cout.copyfmt(std::ios(NULL));
-
-    return;
 }
 
 // Function for setting the value of a register in the program
@@ -356,9 +465,8 @@ void Debugger::set_a_register() {
         return;
     }
 
-    std::unordered_map<std::string, unsigned long long int*> registers{
-        this->fetch_registers()};
-    *(registers[this->command[1]]) = std::stoull(this->command[2]);
+    std::unordered_map<std::string, ull*> registers{this->fetch_registers()};
+    *(registers[this->command[1]]) = this->to_ull(this->command[2]);
     ptrace(PTRACE_SETREGS, this->child, 0, &this->regs);
 }
 
@@ -368,8 +476,7 @@ void Debugger::get_all_registers() {
 
     if (!this->is_running()) return;
 
-    std::unordered_map<std::string, unsigned long long int*> registers{
-        this->fetch_registers()};
+    std::unordered_map<std::string, ull*> registers{this->fetch_registers()};
     std::cout << std::hex << "RAX   " << std::setw(16) << std::left
               << *(registers["rax"]) << " RBX   " << std::setw(16) << std::left
               << *(registers["rbx"]) << " RCX   " << std::setw(16) << std::left
@@ -400,9 +507,8 @@ void Debugger::get_all_registers() {
 
 // Function for fetching all registers and providing them to
 // "get_a_register" and "get_all_registers"
-std::unordered_map<std::string, unsigned long long int*>
-Debugger::fetch_registers() {
-    std::unordered_map<std::string, unsigned long long int*> registers{};
+std::unordered_map<std::string, ull*> Debugger::fetch_registers() {
+    std::unordered_map<std::string, ull*> registers{};
 
     if (ptrace(PTRACE_GETREGS, this->child, 0, &this->regs) == 0) {
         registers["rax"] = &this->regs.rax;
@@ -522,7 +628,7 @@ void Debugger::load_a_program() {
     Elf64_Ehdr elf_header{};
     Elf64_Shdr* sh_table{};
     size_t dummy{};
-    dummy++;
+    dummy++;  // prevent the compiler from showing the unused warning
 
     fseek(file, 0, SEEK_SET);
     dummy = fread(&elf_header, sizeof(Elf64_Ehdr), 1, file);
@@ -543,8 +649,8 @@ void Debugger::load_a_program() {
 
     for (int idx{0}; idx < elf_header.e_shnum; idx++) {
         if (!strcmp(".text", (sh_str + sh_table[idx].sh_name))) {
-            this->end_address = (unsigned long long)sh_table[idx].sh_addr +
-                                sh_table[idx].sh_size - 1;
+            this->end_address =
+                (ull)sh_table[idx].sh_addr + sh_table[idx].sh_size - 1;
             break;
         }
     }
@@ -553,12 +659,13 @@ void Debugger::load_a_program() {
     free(sh_str);
     fclose(file);
 
-    // Undo io manipulation
-    std::cout.copyfmt(std::ios(NULL));
-
     std::cout << "** Program \"" << this->program_name
               << "\" loaded. Entry point 0x" << std::hex << this->entry_address
               << std::endl;
+
+    // Undo io manipulation
+    std::cout.copyfmt(std::ios(NULL));
+
     this->state = State::loaded;
 }
 
@@ -576,6 +683,8 @@ void Debugger::run_the_program() {
         return;
     }
 
+    // TODO: need to handle re-run after tracee exited
+
     std::cout << "** \"run\" is for state loaded and running only."
               << std::endl;
 }
@@ -584,6 +693,7 @@ void Debugger::run_the_program() {
 void Debugger::show_memory_layout() {
     if (!this->is_running()) return;
 
+    // Get memory layout from the tracee's maps
     std::ifstream ifs{"/proc/" + std::to_string(this->child) + "/maps"};
     while (ifs.good()) {
         std::string line{};
@@ -591,20 +701,15 @@ void Debugger::show_memory_layout() {
         std::vector<std::string> tokens{tokenize(line)};
 
         if (tokens.size() >= 6) {
-            std::string first{}, second{};
-            bool found_dash{false};
-            for (auto& ch : tokens[0]) {
-                if (ch == '-')
-                    found_dash = true;
-                else if (!found_dash)
-                    first.push_back(ch);
-                else
-                    second.push_back(ch);
-            }
+            // Extract the start address and end address
+            std::string start{}, end{};
+            std::stringstream ss{tokens[0]};
+            std::getline(ss, start, '-');
+            std::getline(ss, end);
 
-            long long field{std::stoll(tokens[2])};
-            std::cout << std::setw(16) << std::setfill('0') << first << "-"
-                      << std::setw(16) << std::setfill('0') << second << " "
+            ull field{this->to_ull(tokens[2])};
+            std::cout << std::setw(16) << std::setfill('0') << start << "-"
+                      << std::setw(16) << std::setfill('0') << end << " "
                       << tokens[1] << " " << field << "\t" << tokens[5]
                       << std::endl;
 
@@ -617,11 +722,15 @@ void Debugger::show_memory_layout() {
 
 // Function for running a single instruction and stepping into the function call
 void Debugger::run_a_single_instruction() {
-    if (!this->is_stopped()) return;
-
     if (!this->is_running()) return;
 
+    this->run_breakpoint();
+    if (!this->is_stopped()) return;
+
     ptrace(PTRACE_SINGLESTEP, this->child, 0, 0);
+    waitpid(this->child, &this->wait_status, 0);
+
+    this->check_breakpoint();
 }
 
 // Function for starting the program and stopping at the first instruction

@@ -18,11 +18,13 @@
 #include <unordered_map>
 #include <vector>
 
+typedef unsigned long long ull;
+
 enum State { init, loaded, running };
 
 struct Breakpoint {
-    unsigned long id;
-    unsigned long long address;
+    ull id;
+    ull address;
     unsigned char original_instruction;
 };
 
@@ -48,10 +50,10 @@ class Debugger {
     unsigned long breakpoint_id{0};
 
     // Table for mapping the ID to the corresponding breakpoint
-    std::map<unsigned int, Breakpoint> id_to_breakpoint{};
+    std::map<ull, Breakpoint> id_to_breakpoint{};
 
     // Table for mapping the address to the corresponding breakpoint
-    std::unordered_map<unsigned long long, Breakpoint> address_to_breakpoint{};
+    std::unordered_map<ull, Breakpoint> address_to_breakpoint{};
 
     // Vector for containing user command split by spaces
     std::vector<std::string> command{};
@@ -63,10 +65,10 @@ class Debugger {
     struct user_regs_struct regs {};
 
     // Variable for holding the entry address
-    unsigned long long int entry_address{};
+    ull entry_address{};
 
     // Variable for holding the end address
-    unsigned long long int end_address{};
+    ull end_address{};
 
     // Flag for determining whether we should stop the debugger
     bool stop{false};
@@ -92,6 +94,13 @@ class Debugger {
     // Function for checking whether current state is running
     bool is_running();
 
+    // Function for converting the string to unsigned long long
+    static ull to_ull(const std::string& num_str) {
+        if (num_str.compare(0, 2, "0x") == 0)
+            return std::stoull(num_str, 0, 16);
+        return std::stoull(num_str);
+    }
+
     // Function for printing sdb> prompt
     void print_prompt();
 
@@ -111,6 +120,10 @@ class Debugger {
     // Function for checking whether the tracee reaches a breakpoint when it's
     // stopped
     void check_breakpoint();
+
+    // Function for running the stopped instruction and write 0xcc back to the
+    // breakpoint
+    void run_breakpoint();
 
     // Function for continuing the program execution
     void continue_the_execution();
@@ -135,7 +148,7 @@ class Debugger {
 
     // Function for fetching all registers and providing them to
     // "get_a_register" and "get_all_registers"
-    std::unordered_map<std::string, unsigned long long int*> fetch_registers();
+    std::unordered_map<std::string, ull*> fetch_registers();
 
     // Function for printing the help message
     void help();
