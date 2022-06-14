@@ -20,7 +20,7 @@
 
 typedef unsigned long long ull;
 
-enum State { init, loaded, running };
+enum State { init, loaded, running, terminated };
 
 struct Breakpoint {
     ull id;
@@ -32,15 +32,12 @@ std::vector<std::string> tokenize(const std::string& sentence);
 
 // Class representing a Simplified Scriptable Instruction Level Debugger
 // Example:
-//      Debugger debugger{};
-//      debugger.debug();
-//      or
-//      Debugger debugger{program_name};
+//      Debugger debugger{script, program_name};
 //      debugger.debug();
 class Debugger {
    public:
-    Debugger();
-    Debugger(const std::string& program_name);
+    Debugger(const std::string& script_file = "",
+             const std::string& program_name = "");
 
     // Function for starting the debugger
     void debug();
@@ -82,6 +79,12 @@ class Debugger {
     // Flag for indicating the status of the tracee
     int wait_status{};
 
+    // String for indicating the script file
+    std::string script_file{};
+
+    // Ifstream for reading the script file
+    std::ifstream script_ifs{};
+
     // String for indicating the current program
     std::string program_name{};
 
@@ -110,6 +113,9 @@ class Debugger {
 
     // Function for setting a breakpoint at the user-typed address
     void set_a_breakpoint();
+
+    // Function for setting 0xcc at the given address
+    void set_0xcc(const long& mem, const ull& address);
 
     // Function for deleting the breakpoint at the user-typed address
     void delete_a_breakpoint();

@@ -27,7 +27,7 @@ int main(int argc, char* argv[]) {
     }
     if (optind < argc) program_name = argv[optind];
 
-    Debugger debugger{program_name};
+    Debugger debugger{script, program_name};
     debugger.debug();
     return 0;
 }

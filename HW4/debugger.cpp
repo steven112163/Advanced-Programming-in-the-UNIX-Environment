@@ -9,10 +9,22 @@ std::vector<std::string> tokenize(const std::string& sentence) {
     return tokens;
 }
 
-Debugger::Debugger() { this->setup_handler_table(); }
-
-Debugger::Debugger(const std::string& program_name) {
+Debugger::Debugger(const std::string& script_file /*= ""*/,
+                   const std::string& program_name /*= ""*/) {
     this->setup_handler_table();
+
+    if (!script_file.empty()) {
+        this->script_file = script_file;
+        this->script_ifs.open(this->script_file);
+        if (!this->script_ifs.good()) {
+            std::cout << "** Load from script \"" << this->script_file
+                      << "\" failed." << std::endl;
+            this->quit_from_the_debugger();
+            return;
+        }
+        std::cout << "** Load from script \"" << this->script_file
+                  << "\" successfully." << std::endl;
+    }
 
     if (!program_name.empty()) {
         this->command = {"load", program_name};
@@ -24,7 +36,7 @@ Debugger::Debugger(const std::string& program_name) {
 void Debugger::debug() {
     while (true) {
         if (this->stop) break;
-        this->print_prompt();
+        if (this->script_file.empty()) this->print_prompt();
         this->command_handler();
     }
 }
@@ -123,9 +135,15 @@ void Debugger::print_prompt() { std::cout << "sdb> "; }
 // Function for reading user inputs and send the command to the responsible
 // handler
 void Debugger::command_handler() {
+    if (std::cin.eof() || this->script_ifs.eof()) {
+        this->quit_from_the_debugger();
+        return;
+    }
+
     // Get the command from the user
     std::string raw_command{};
-    std::getline(std::cin, raw_command);
+    std::getline(this->script_file.empty() ? std::cin : this->script_ifs,
+                 raw_command);
     this->command = tokenize(raw_command);
     if (this->command.size() == 0) return;
 
@@ -163,6 +181,11 @@ void Debugger::set_a_breakpoint() {
     this->address_to_breakpoint[breakpoint.address] =
         this->id_to_breakpoint[breakpoint.id] = breakpoint;
 
+    this->set_0xcc(mem, address);
+}
+
+// Function for setting 0xcc at the given address
+void Debugger::set_0xcc(const long& mem, const ull& address) {
     ptrace(PTRACE_POKETEXT, this->child, address,
            (mem & 0xffffffffffffff00) | 0xcc);
 }
@@ -274,6 +297,7 @@ void Debugger::check_breakpoint() {
         std::cout << "** Child process " << this->child
                   << " terminiated normally (code "
                   << WEXITSTATUS(this->wait_status) << ")" << std::endl;
+        this->state = State::terminated;
     }
 }
 
@@ -428,7 +452,11 @@ void Debugger::dump_the_memory() {
 }
 
 // Function for cleaning up the debugger and exiting
-void Debugger::quit_from_the_debugger() { this->stop = true; }
+void Debugger::quit_from_the_debugger() {
+    this->stop = true;
+
+    if (this->script_ifs.is_open()) this->script_ifs.close();
+}
 
 // Function for getting the value of a register from the program
 void Debugger::get_a_register() {
@@ -571,7 +599,7 @@ void Debugger::help() {
 
 // Function for loading the user-typed program and executing it
 void Debugger::load_a_program() {
-    if (this->state != State::init) {
+    if (this->state == State::loaded || this->state == State::running) {
         // The program is already loaded
         std::cout << "** Program \"" << this->program_name
                   << "\" has been loaded. Entry point 0x" << std::hex
@@ -586,41 +614,11 @@ void Debugger::load_a_program() {
         std::cout << "** No program is given." << std::endl;
         return;
     }
-
-    // Fork the tracee
-    if ((this->child = fork()) < 0) {
-        perror("** Fork");
-        this->quit_from_the_debugger();
-        return;
-    }
-
-    if (child == 0) {
-        // Tracee
-        if (ptrace(PTRACE_TRACEME, 0, 0, 0) < 0) {
-            perror("** Ptrace (traceme)");
-            this->quit_from_the_debugger();
-            return;
-        }
-
-        // Execute the program
-        execlp(this->command[1].c_str(), this->command[1].c_str());
-
-        // Shouldn't reach here
-        perror("** Exec");
-        this->quit_from_the_debugger();
-    }
-
-    // Tracer
-    if (waitpid(this->child, &this->wait_status, 0) < 0) {
-        perror("** Wait (after fork)");
-        this->quit_from_the_debugger();
-        return;
-    }
-
-    if (!this->is_stopped()) return;
-
-    ptrace(PTRACE_SETOPTIONS, this->child, 0, PTRACE_O_EXITKILL);
     this->program_name = this->command[1];
+
+    this->breakpoint_id = 0;
+    this->id_to_breakpoint.clear();
+    this->address_to_breakpoint.clear();
 
     // Read ELF and section headers to get the addresses of entry and end of
     // .text
@@ -678,15 +676,63 @@ void Debugger::run_the_program() {
         return;
     }
 
-    if (this->state == State::loaded) {
-        this->start_the_program();
+    if (this->state == State::init) {
+        std::cout << "** The program is not loaded." << std::endl;
         return;
     }
 
-    // TODO: need to handle re-run after tracee exited
+    // Fork the tracee
+    if ((this->child = fork()) < 0) {
+        perror("** Fork");
+        this->quit_from_the_debugger();
+        return;
+    }
 
-    std::cout << "** \"run\" is for state loaded and running only."
-              << std::endl;
+    if (this->child == 0) {
+        // Tracee
+        if (ptrace(PTRACE_TRACEME, 0, 0, 0) < 0) {
+            perror("** Ptrace (traceme)");
+            this->quit_from_the_debugger();
+            return;
+        }
+
+        // Execute the program
+        execlp(this->program_name.c_str(), this->program_name.c_str());
+
+        // Shouldn't reach here
+        perror("** Exec");
+        this->quit_from_the_debugger();
+    }
+
+    // Tracer
+    if (waitpid(this->child, &this->wait_status, 0) < 0) {
+        perror("** Wait (after fork)");
+        this->quit_from_the_debugger();
+        return;
+    }
+
+    if (!this->is_stopped()) return;
+
+    ptrace(PTRACE_SETOPTIONS, this->child, 0, PTRACE_O_EXITKILL);
+
+    std::cout << "** PID " << this->child << std::endl;
+
+    // If the program is re-run from the "terminated" state, we need to set all
+    // the breakpoints and continue the execution. Otherwise, we set the state
+    // to "running" because it is from "loaded" state
+    if (this->state == State::terminated) {
+        this->state = State::running;
+
+        for (const auto& [id, breakpoint] : this->id_to_breakpoint) {
+            long mem =
+                ptrace(PTRACE_PEEKTEXT, this->child, breakpoint.address, 0);
+            this->set_0xcc(mem, breakpoint.address);
+        }
+
+        this->continue_the_execution();
+    } else {
+        this->state = State::running;
+    }
 }
 
 // Function for showing the memory layout of the running program
@@ -735,6 +781,13 @@ void Debugger::run_a_single_instruction() {
 
 // Function for starting the program and stopping at the first instruction
 void Debugger::start_the_program() {
+    if (this->state == State::terminated) {
+        std::cout << "** Program \"" << this->program_name
+                  << "\" is terminated. Please use \"run\" to execute it again."
+                  << std::endl;
+        return;
+    }
+
     if (this->state == State::running) {
         std::cout << "** Program \"" << this->program_name
                   << "\" is already running" << std::endl;
@@ -746,6 +799,5 @@ void Debugger::start_the_program() {
         return;
     }
 
-    std::cout << "** PID " << this->child << std::endl;
-    this->state = State::running;
+    this->run_the_program();
 }
